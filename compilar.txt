@@ -1,0 +1,11 @@
+compilar:
+rm -f CMakeCache.txt
+rm -rf CMakeFiles
+cmake -G "MinGW Makefiles" .
+mingw32-make
+
+ou
+
+bash build.sh
+executar:
+./lmstudio_chat_client.exe

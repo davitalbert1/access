@@ -1,0 +1,97 @@
+
+---
+events:
+  -
+    kind: "message-v1"
+    backtrace:
+      - "D:/msys64/mingw64/share/cmake/Modules/CMakeDetermineSystem.cmake:212 (message)"
+      - "CMakeLists.txt:2 (project)"
+    message: |
+      The system is: Windows - 10.0.26200 - AMD64
+  -
+    kind: "find-v1"
+    backtrace:
+      - "D:/msys64/mingw64/share/cmake/Modules/CMakeMSYSFindMake.cmake:5 (find_program)"
+      - "CMakeLists.txt:2 (project)"
+    mode: "program"
+    variable: "CMAKE_MAKE_PROGRAM"
+    description: "Path to a program."
+    settings:
+      SearchFramework: "NEVER"
+      SearchAppBundle: "NEVER"
+      CMAKE_FIND_USE_CMAKE_PATH: true
+      CMAKE_FIND_USE_CMAKE_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_CMAKE_SYSTEM_PATH: true
+      CMAKE_FIND_USE_INSTALL_PREFIX: true
+    names:
+      - "make"
+    candidate_directories:
+      - "D:/msys64/mingw64/bin/"
+      - "D:/msys64/usr/local/bin/"
+      - "D:/msys64/usr/bin/"
+      - "C:/Windows/System32/"
+      - "C:/Windows/"
+      - "C:/Windows/System32/wbem/"
+      - "C:/Windows/System32/WindowsPowerShell/v1.0/"
+      - "D:/msys64/usr/bin/site_perl/"
+      - "D:/msys64/usr/bin/vendor_perl/"
+      - "D:/msys64/usr/bin/core_perl/"
+      - "C:/msys32/usr/"
+      - "C:/mingw/msys/"
+      - "/REGISTRY-NOTFOUND/usr/"
+    searched_directories:
+      - "D:/msys64/mingw64/bin/make.com"
+      - "D:/msys64/mingw64/bin/make.exe"
+      - "D:/msys64/mingw64/bin/make"
+      - "D:/msys64/usr/local/bin/make.com"
+      - "D:/msys64/usr/local/bin/make.exe"
+      - "D:/msys64/usr/local/bin/make"
+      - "D:/msys64/usr/bin/make.com"
+      - "D:/msys64/usr/bin/make.exe"
+      - "D:/msys64/usr/bin/make"
+      - "C:/Windows/System32/make.com"
+      - "C:/Windows/System32/make.exe"
+      - "C:/Windows/System32/make"
+      - "C:/Windows/make.com"
+      - "C:/Windows/make.exe"
+      - "C:/Windows/make"
+      - "C:/Windows/System32/wbem/make.com"
+      - "C:/Windows/System32/wbem/make.exe"
+      - "C:/Windows/System32/wbem/make"
+      - "C:/Windows/System32/WindowsPowerShell/v1.0/make.com"
+      - "C:/Windows/System32/WindowsPowerShell/v1.0/make.exe"
+      - "C:/Windows/System32/WindowsPowerShell/v1.0/make"
+      - "D:/msys64/usr/bin/site_perl/make.com"
+      - "D:/msys64/usr/bin/site_perl/make.exe"
+      - "D:/msys64/usr/bin/site_perl/make"
+      - "D:/msys64/usr/bin/vendor_perl/make.com"
+      - "D:/msys64/usr/bin/vendor_perl/make.exe"
+      - "D:/msys64/usr/bin/vendor_perl/make"
+      - "D:/msys64/usr/bin/core_perl/make.com"
+      - "D:/msys64/usr/bin/core_perl/make.exe"
+      - "D:/msys64/usr/bin/core_perl/make"
+      - "C:/msys32/usr/make.com"
+      - "C:/msys32/usr/make.exe"
+      - "C:/msys32/usr/make"
+      - "C:/mingw/msys/make.com"
+      - "C:/mingw/msys/make.exe"
+      - "C:/mingw/msys/make"
+      - "/REGISTRY-NOTFOUND/usr/make.com"
+      - "/REGISTRY-NOTFOUND/usr/make.exe"
+      - "/REGISTRY-NOTFOUND/usr/make"
+    found: false
+    search_context:
+      ENV{PATH}:
+        - "D:\\msys64\\mingw64\\bin"
+        - "D:\\msys64\\usr\\local\\bin"
+        - "D:\\msys64\\usr\\bin"
+        - "D:\\msys64\\usr\\bin"
+        - "C:\\Windows\\System32"
+        - "C:\\Windows"
+        - "C:\\Windows\\System32\\Wbem"
+        - "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\"
+        - "D:\\msys64\\usr\\bin\\site_perl"
+        - "D:\\msys64\\usr\\bin\\vendor_perl"
+        - "D:\\msys64\\usr\\bin\\core_perl"
+...

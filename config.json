@@ -1,0 +1,5 @@
+{
+  "host": "127.0.0.1",
+  "model": "qwen/qwen2.5-coder-14b",
+  "port": 1234
+}
