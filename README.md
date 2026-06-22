@@ -79,16 +79,17 @@ mingw32-make
 ## 📂 Project Structure
 
 ```text
+├── include/
+│   ├── chat_app.h            # Header for main UI and panels
+│   ├── lm_client.h           # Header for API integration client
+│   ├── tools.h               # Header for local filesystem tools
+│   └── diff_viewer.h         # Header for side-by-side diff visualizer
 ├── src/
 │   ├── main.cpp              # Entry point, initializes GLFW and ImGui
-│   ├── chat_app.cpp          # Implemetation of the main UI and chat panels
-│   ├── chat_app.hpp
+│   ├── chat_app.cpp          # Implementation of the main UI and chat panels
 │   ├── lm_client.cpp         # API integration client and tool loop implementation
-│   ├── lm_client.hpp
 │   ├── tools.cpp             # Local file system tools exposed to the model
-│   ├── tools.hpp
-│   ├── diff_viewer.cpp       # Basic side-by-side file diff visualizer
-│   └── diff_viewer.hpp
+│   └── diff_viewer.cpp       # Basic side-by-side file diff visualizer
 ├── thirdparty/
 │   └── imgui/                # Dear ImGui codebase and backend files (GLFW/OpenGL3)
 ├── CMakeLists.txt            # CMake build configuration script

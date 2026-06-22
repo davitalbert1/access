@@ -1,6 +1,6 @@
-#include "chat_app.hpp"
-#include "tools.hpp"
-#include "diff_viewer.hpp"
+#include "chat_app.h"
+#include "tools.h"
+#include "diff_viewer.h"
 #include <imgui.h>
 #include <cstring>
 #include <algorithm>
@@ -8,9 +8,81 @@
 #include <filesystem>
 #include <fstream>
 #include <chrono>
+#include <sstream>
+#include <iomanip>
 
 namespace fs = std::filesystem;
 using json = nlohmann::json;
+
+#ifdef _WIN32
+#include <windows.h>
+static std::string get_executable_directory() {
+    char path[MAX_PATH];
+    GetModuleFileNameA(NULL, path, MAX_PATH);
+    std::string path_str(path);
+    size_t pos = path_str.find_last_of("\\/");
+    if (pos != std::string::npos) {
+        return path_str.substr(0, pos);
+    }
+    return fs::current_path().generic_string();
+}
+#else
+static std::string get_executable_directory() {
+    return fs::current_path().generic_string();
+}
+#endif
+
+static std::string wrap_text(const std::string& text, float wrap_width) {
+    std::string result;
+    std::string word;
+    std::string current_line;
+    
+    auto flush_word = [&]() {
+        if (word.empty()) return;
+        std::string test_line = current_line.empty() ? word : current_line + " " + word;
+        float width = ImGui::CalcTextSize(test_line.c_str()).x;
+        if (width > wrap_width && !current_line.empty()) {
+            result += current_line + "\n";
+            current_line = word;
+        } else {
+            current_line = test_line;
+        }
+        word.clear();
+    };
+
+    for (char c : text) {
+        if (c == '\n') {
+            flush_word();
+            result += current_line + "\n";
+            current_line.clear();
+        } else if (c == ' ' || c == '\t') {
+            flush_word();
+        } else {
+            word += c;
+        }
+    }
+    flush_word();
+    if (!current_line.empty()) {
+        result += current_line;
+    }
+    return result;
+}
+
+static std::string format_size(size_t size) {
+    double size_d = static_cast<double>(size);
+    const char* units[] = {"B", "KB", "MB", "GB", "TB"};
+    int unit_idx = 0;
+    while (size_d >= 1024.0 && unit_idx < 4) {
+        size_d /= 1024.0;
+        unit_idx++;
+    }
+    if (unit_idx == 0) {
+        return std::to_string(size) + " B";
+    }
+    std::stringstream ss;
+    ss << std::fixed << std::setprecision(1) << size_d << " " << units[unit_idx];
+    return ss.str();
+}
 
 namespace gui {
 
@@ -178,8 +250,16 @@ void ChatApp::render() {
         
         render_diff_popup();
         render_file_content_popup();
+        render_revert_confirm_popup();
         
         ImGui::End();
+    }
+    
+    // Save browser path if it has changed
+    static std::string last_saved_browser_path = "";
+    if (last_saved_browser_path != std::string(browser_path_buf)) {
+        save_config();
+        last_saved_browser_path = browser_path_buf;
     }
 }
 
@@ -221,21 +301,68 @@ void ChatApp::render_left_panel() {
         
         if (msg.role == "system_info") {
             ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.85f, 0.85f, 0.60f, 1.0f));
-            ImGui::TextWrapped("%s", msg.content.c_str());
+            
+            // Copyable text
+            std::string wrapped = wrap_text(msg.content, ImGui::GetContentRegionAvail().x - 15.0f);
+            ImVec2 size = ImGui::CalcTextSize(wrapped.c_str());
+            size.y += ImGui::GetStyle().FramePadding.y * 2.0f + 4.0f;
+            size.x = ImGui::GetContentRegionAvail().x;
+            
+            ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0, 0, 0, 0));
+            ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0, 0, 0, 0));
+            ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0, 0));
+            
+            std::string id = "##msg_content_info_" + std::to_string(i);
+            ImGui::InputTextMultiline(id.c_str(), const_cast<char*>(wrapped.c_str()), wrapped.size(), size, ImGuiInputTextFlags_ReadOnly);
+            
+            ImGui::PopStyleColor(2);
+            ImGui::PopStyleVar();
+            
             ImGui::PopStyleColor();
             ImGui::Separator();
         } 
         else if (msg.role == "system") {
             // Internal System prompt usually hidden or shown small
-            if (ImGui::CollapsingHeader("Prompt de Sistema (Oculto ao LLM)")) {
-                ImGui::TextWrapped("%s", msg.content.c_str());
+            std::string header_id = "Prompt de Sistema (Oculto ao LLM)##" + std::to_string(i);
+            if (ImGui::CollapsingHeader(header_id.c_str())) {
+                // Copyable text
+                std::string wrapped = wrap_text(msg.content, ImGui::GetContentRegionAvail().x - 15.0f);
+                ImVec2 size = ImGui::CalcTextSize(wrapped.c_str());
+                size.y += ImGui::GetStyle().FramePadding.y * 2.0f + 4.0f;
+                size.x = ImGui::GetContentRegionAvail().x;
+                
+                ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0, 0, 0, 0));
+                ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0, 0, 0, 0));
+                ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0, 0));
+                
+                std::string id = "##msg_content_sys_" + std::to_string(i);
+                ImGui::InputTextMultiline(id.c_str(), const_cast<char*>(wrapped.c_str()), wrapped.size(), size, ImGuiInputTextFlags_ReadOnly);
+                
+                ImGui::PopStyleColor(2);
+                ImGui::PopStyleVar();
             }
         } 
         else if (msg.role == "tool") {
-            std::string label = "Ferramenta executada: " + msg.name + " (" + msg.timestamp + ")";
+            std::string label = "Ferramenta executada: " + msg.name + " (" + msg.timestamp + ")##" + std::to_string(i);
             if (ImGui::CollapsingHeader(label.c_str())) {
                 ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.6f, 0.9f, 0.6f, 1.0f));
-                ImGui::TextWrapped("%s", msg.content.c_str());
+                
+                // Copyable text
+                std::string wrapped = wrap_text(msg.content, ImGui::GetContentRegionAvail().x - 15.0f);
+                ImVec2 size = ImGui::CalcTextSize(wrapped.c_str());
+                size.y += ImGui::GetStyle().FramePadding.y * 2.0f + 4.0f;
+                size.x = ImGui::GetContentRegionAvail().x;
+                
+                ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0, 0, 0, 0));
+                ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0, 0, 0, 0));
+                ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0, 0));
+                
+                std::string id = "##msg_content_tool_" + std::to_string(i);
+                ImGui::InputTextMultiline(id.c_str(), const_cast<char*>(wrapped.c_str()), wrapped.size(), size, ImGuiInputTextFlags_ReadOnly);
+                
+                ImGui::PopStyleColor(2);
+                ImGui::PopStyleVar();
+                
                 ImGui::PopStyleColor();
             }
         } 
@@ -245,7 +372,55 @@ void ChatApp::render_left_panel() {
             std::string sender = is_user ? "Usuario" : "Modelo AI";
             
             ImGui::TextColored(label_color, "[%s] %s:", msg.timestamp.c_str(), sender.c_str());
-            ImGui::TextWrapped("%s", msg.content.c_str());
+            if (msg.role == "assistant" && !msg.msg_id.empty()) {
+                auto changes = tools::get_change_history();
+                bool has_changes = false;
+                for (const auto& change : changes) {
+                    if (change.message_id == msg.msg_id && !change.reverted) {
+                        has_changes = true;
+                        break;
+                    }
+                }
+                if (has_changes) {
+                    ImGui::SameLine();
+                    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.4f, 0.15f, 0.15f, 1.0f));
+                    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.6f, 0.2f, 0.2f, 1.0f));
+                    ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.3f, 0.1f, 0.1f, 1.0f));
+                    std::string btn_label = "Reverter Alteracoes##" + msg.msg_id;
+                    if (ImGui::SmallButton(btn_label.c_str())) {
+                        revert_confirm_msg_id = msg.msg_id;
+                        revert_affected_files.clear();
+                        for (const auto& change : changes) {
+                            if (change.message_id == msg.msg_id && !change.reverted) {
+                                if (std::find(revert_affected_files.begin(), revert_affected_files.end(), change.filepath) == revert_affected_files.end()) {
+                                    revert_affected_files.push_back(change.filepath);
+                                }
+                            }
+                        }
+                        if (!revert_affected_files.empty()) {
+                            show_revert_confirm_popup = true;
+                        }
+                    }
+                    ImGui::PopStyleColor(3);
+                }
+            }
+
+            // Copyable text
+            std::string wrapped = wrap_text(msg.content, ImGui::GetContentRegionAvail().x - 15.0f);
+            ImVec2 size = ImGui::CalcTextSize(wrapped.c_str());
+            size.y += ImGui::GetStyle().FramePadding.y * 2.0f + 4.0f;
+            size.x = ImGui::GetContentRegionAvail().x;
+            
+            ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0, 0, 0, 0));
+            ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0, 0, 0, 0));
+            ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0, 0));
+            
+            std::string id = "##msg_content_" + std::to_string(i);
+            ImGui::InputTextMultiline(id.c_str(), const_cast<char*>(wrapped.c_str()), wrapped.size(), size, ImGuiInputTextFlags_ReadOnly);
+            
+            ImGui::PopStyleColor(2);
+            ImGui::PopStyleVar();
+            
             ImGui::Separator();
         }
     }
@@ -278,6 +453,18 @@ void ChatApp::render_left_panel() {
         is_generating = true;
         current_status = "Iniciando requisicao...";
         scroll_to_bottom = true;
+        
+        // Dynamically set system prompt with current directory path
+        std::string browser_path(browser_path_buf);
+        std::string system_prompt = 
+            "Voce e um assistente de programacao util. "
+            "Voce pode ler e modificar arquivos locais usando as ferramentas fornecidas. "
+            "Sempre use a ferramenta modify_file se precisar editar um arquivo. "
+            "Quando for ler pastas ou arquivos, informe os caminhos corretos. "
+            "Sempre responda em Portugues. "
+            "O diretorio de trabalho atual (aberto no visualizador de arquivos) e: " + browser_path + ". "
+            "Use este diretorio como base para as operacoes de arquivos e pastas.";
+        client.set_system_prompt(system_prompt);
         
         client.send_message(prompt, 
             [this](const std::string& status) {
@@ -349,7 +536,7 @@ void ChatApp::render_right_panel() {
                                 show_file_content_popup = true;
                             }
                             ImGui::SameLine(ImGui::GetWindowWidth() - 100);
-                            ImGui::TextDisabled("%zu B", size);
+                            ImGui::TextDisabled("%s", format_size(size).c_str());
                         }
                     }
                     ImGui::EndChild();
@@ -580,15 +767,13 @@ void ChatApp::save_config() {
         cfg["host"] = std::string(host_buf);
         cfg["port"] = port;
         cfg["model"] = std::string(model_buf);
+        cfg["browser_path"] = std::string(browser_path_buf);
         
         std::ofstream out(CONFIG_FILE);
         if (out.is_open()) {
             out << cfg.dump(2);
-            std::cout << "[Config] Configuracoes salvas em " << CONFIG_FILE << std::endl;
         }
-    } catch (const std::exception& e) {
-        std::cerr << "[Config] Erro ao salvar: " << e.what() << std::endl;
-    }
+    } catch (const std::exception& e) {}
 }
 
 void ChatApp::load_config() {
@@ -608,11 +793,69 @@ void ChatApp::load_config() {
                 std::string m = cfg["model"].get<std::string>();
                 std::strcpy(model_buf, m.c_str());
             }
-            
-            std::cout << "[Config] Configuracoes carregadas de " << CONFIG_FILE << std::endl;
+            if (cfg.contains("browser_path") && cfg["browser_path"].is_string()) {
+                std::string bp = cfg["browser_path"].get<std::string>();
+                fs::path p(bp);
+                if (fs::exists(p) && fs::is_directory(p)) {
+                    std::strcpy(browser_path_buf, bp.c_str());
+                } else {
+                    std::strcpy(browser_path_buf, get_executable_directory().c_str());
+                }
+            } else {
+                std::strcpy(browser_path_buf, get_executable_directory().c_str());
+            }
+        } else {
+            std::strcpy(browser_path_buf, get_executable_directory().c_str());
         }
     } catch (const std::exception& e) {
-        std::cerr << "[Config] Erro ao carregar (usando padroes): " << e.what() << std::endl;
+        std::strcpy(browser_path_buf, get_executable_directory().c_str());
+    }
+}
+
+void ChatApp::render_revert_confirm_popup() {
+    if (show_revert_confirm_popup) {
+        ImGui::OpenPopup("Confirmar Reversao");
+    }
+    
+    ImGui::SetNextWindowSize(ImVec2(550, 260), ImGuiCond_Always);
+    if (ImGui::BeginPopupModal("Confirmar Reversao", &show_revert_confirm_popup, ImGuiWindowFlags_NoResize)) {
+        ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "AVISO: Esta acao ira desfazer todas as alteracoes desta mensagem!");
+        ImGui::TextWrapped("Deseja restaurar o conteudo original dos seguintes arquivos?");
+        ImGui::Separator();
+        
+        ImGui::BeginChild("RevertFilesList", ImVec2(0, 110), true);
+        for (const auto& file : revert_affected_files) {
+            ImGui::BulletText("%s", file.c_str());
+        }
+        ImGui::EndChild();
+        
+        ImGui::Separator();
+        
+        if (ImGui::Button("Sim, Reverter", ImVec2(120, 0))) {
+            std::string err;
+            auto changes = tools::get_change_history();
+            bool success = true;
+            // Revert in reverse order (newest first)
+            for (int i = (int)changes.size() - 1; i >= 0; --i) {
+                auto& change = changes[i];
+                if (change.message_id == revert_confirm_msg_id && !change.reverted) {
+                    if (!tools::revert_change(change.id, err)) {
+                        success = false;
+                        std::cerr << "Erro ao reverter alteracao: " << err << std::endl;
+                    }
+                }
+            }
+            show_revert_confirm_popup = false;
+            ImGui::CloseCurrentPopup();
+        }
+        
+        ImGui::SameLine();
+        if (ImGui::Button("Cancelar", ImVec2(120, 0))) {
+            show_revert_confirm_popup = false;
+            ImGui::CloseCurrentPopup();
+        }
+        
+        ImGui::EndPopup();
     }
 }
 

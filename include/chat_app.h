@@ -1,6 +1,6 @@
 #pragma once
 
-#include "lm_client.hpp"
+#include "lm_client.h"
 #include <string>
 #include <vector>
 
@@ -39,6 +39,11 @@ private:
     bool show_diff_popup = false;
     std::string revert_error = "";
     
+    // Revert message popup state
+    bool show_revert_confirm_popup = false;
+    std::string revert_confirm_msg_id = "";
+    std::vector<std::string> revert_affected_files;
+    
     // File Browser state
     char browser_path_buf[512];
     std::string selected_file_path = "";
@@ -50,6 +55,7 @@ private:
     void render_right_panel();
     void render_diff_popup();
     void render_file_content_popup();
+    void render_revert_confirm_popup();
     
     // Helper to ping the LM Studio server
     void check_server_connection();

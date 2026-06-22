@@ -1,11 +1,14 @@
-#include "lm_client.hpp"
-#include "tools.hpp"
+#include "lm_client.h"
+#include "tools.h"
 #include <curl/curl.h>
 #include <thread>
 #include <chrono>
 #include <sstream>
 #include <iomanip>
 #include <iostream>
+#include <atomic>
+
+static std::atomic<int> global_msg_id_counter{1};
 
 using json = nlohmann::json;
 
@@ -154,11 +157,13 @@ bool LMClient::check_connection(std::string& err_out) {
 void LMClient::send_message(const std::string& user_prompt,
                             std::function<void(const std::string& status)> on_status_change,
                             std::function<void(bool success, const std::string& final_text)> on_complete) {
-    std::thread([this, user_prompt, on_status_change, on_complete]() {
+    std::string turn_id = "msg_" + std::to_string(global_msg_id_counter++);
+    std::thread([this, user_prompt, turn_id, on_status_change, on_complete]() {
+        tools::current_tool_message_id = turn_id;
         // Add User message
         {
             std::lock_guard<std::mutex> lock(history_mutex);
-            history.push_back({ "user", user_prompt, "", "", nullptr, get_current_timestamp() });
+            history.push_back({ "user", user_prompt, "", "", nullptr, get_current_timestamp(), turn_id });
         }
         
         on_status_change("Enviando prompt ao modelo...");
@@ -293,6 +298,7 @@ void LMClient::send_message(const std::string& user_prompt,
                     assistant_msg.content = content;
                     assistant_msg.tool_calls = tool_calls;
                     assistant_msg.timestamp = get_current_timestamp();
+                    assistant_msg.msg_id = turn_id;
                     history.push_back(assistant_msg);
                 }
                 
@@ -361,6 +367,7 @@ bool LMClient::run_tool_calls_loop(const nlohmann::json& tool_calls,
             tool_msg.name = func_name;
             tool_msg.tool_call_id = call_id;
             tool_msg.timestamp = get_current_timestamp();
+            tool_msg.msg_id = tools::current_tool_message_id;
             history.push_back(tool_msg);
         }
     }

@@ -1,5 +1,3 @@
-# Install script for directory: D:/access
-
 # Set the install prefix
 if(NOT DEFINED CMAKE_INSTALL_PREFIX)
   set(CMAKE_INSTALL_PREFIX "C:/Program Files (x86)/lmstudio_chat_client")
@@ -9,8 +7,7 @@ string(REGEX REPLACE "/$" "" CMAKE_INSTALL_PREFIX "${CMAKE_INSTALL_PREFIX}")
 # Set the install configuration name.
 if(NOT DEFINED CMAKE_INSTALL_CONFIG_NAME)
   if(BUILD_TYPE)
-    string(REGEX REPLACE "^[^A-Za-z0-9_]+" ""
-           CMAKE_INSTALL_CONFIG_NAME "${BUILD_TYPE}")
+    string(REGEX REPLACE "^[^A-Za-z0-9_]+" "" CMAKE_INSTALL_CONFIG_NAME "${BUILD_TYPE}")
   else()
     set(CMAKE_INSTALL_CONFIG_NAME "")
   endif()
@@ -37,11 +34,9 @@ if(NOT DEFINED CMAKE_OBJDUMP)
   set(CMAKE_OBJDUMP "C:/msys64/mingw64/bin/objdump.exe")
 endif()
 
-string(REPLACE ";" "\n" CMAKE_INSTALL_MANIFEST_CONTENT
-       "${CMAKE_INSTALL_MANIFEST_FILES}")
+string(REPLACE ";" "\n" CMAKE_INSTALL_MANIFEST_CONTENT "${CMAKE_INSTALL_MANIFEST_FILES}")
 if(CMAKE_INSTALL_LOCAL_ONLY)
-  file(WRITE "D:/access/install_local_manifest.txt"
-     "${CMAKE_INSTALL_MANIFEST_CONTENT}")
+  file(WRITE "D:/access/install_local_manifest.txt" "${CMAKE_INSTALL_MANIFEST_CONTENT}")
 endif()
 if(CMAKE_INSTALL_COMPONENT)
   if(CMAKE_INSTALL_COMPONENT MATCHES "^[a-zA-Z0-9_.+-]+$")
@@ -56,6 +51,5 @@ else()
 endif()
 
 if(NOT CMAKE_INSTALL_LOCAL_ONLY)
-  file(WRITE "D:/access/${CMAKE_INSTALL_MANIFEST}"
-     "${CMAKE_INSTALL_MANIFEST_CONTENT}")
+  file(WRITE "D:/access/${CMAKE_INSTALL_MANIFEST}" "${CMAKE_INSTALL_MANIFEST_CONTENT}")
 endif()

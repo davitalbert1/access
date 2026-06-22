@@ -1,4 +1,4 @@
-#include "diff_viewer.hpp"
+#include "diff_viewer.h"
 #include <sstream>
 #include <algorithm>
 #include <vector>

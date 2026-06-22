@@ -1,4 +1,4 @@
-#include "tools.hpp"
+#include "tools.h"
 #include <filesystem>
 #include <fstream>
 #include <sstream>
@@ -10,6 +10,7 @@ namespace fs = std::filesystem;
 using json = nlohmann::json;
 
 namespace tools {
+thread_local std::string current_tool_message_id = "";
 
 static std::vector<FileChange> history;
 static std::mutex history_mutex;
@@ -188,6 +189,7 @@ std::string modify_file(const std::string& filepath_str,
             change.target_content = target_content;
             change.replacement_content = replacement_content;
             change.reverted = false;
+            change.message_id = current_tool_message_id;
             history.push_back(change);
         }
 

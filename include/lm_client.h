@@ -15,6 +15,7 @@ struct Message {
     std::string tool_call_id;  // For tool results and matching tool calls
     nlohmann::json tool_calls; // Parsed tool calls from the assistant if any
     std::string timestamp;
+    std::string msg_id;        // Unique message identifier
 };
 
 class LMClient {

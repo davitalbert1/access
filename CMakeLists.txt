@@ -11,8 +11,6 @@ set(SOURCES
     src/lm_client.cpp
     src/diff_viewer.cpp
     src/chat_app.cpp
-    
-    # ImGui sources
     thirdparty/imgui/imgui.cpp
     thirdparty/imgui/imgui_draw.cpp
     thirdparty/imgui/imgui_tables.cpp
@@ -21,19 +19,18 @@ set(SOURCES
     thirdparty/imgui/backends/imgui_impl_opengl3.cpp
 )
 
-# Headers
 set(HEADERS
-    src/tools.hpp
-    src/lm_client.hpp
-    src/diff_viewer.hpp
-    src/chat_app.hpp
+    include/tools.h
+    include/lm_client.h
+    include/diff_viewer.h
+    include/chat_app.h
 )
 
 add_executable(lmstudio_chat_client ${SOURCES} ${HEADERS})
 
 # Include directories
 target_include_directories(lmstudio_chat_client PRIVATE
-    src
+    include
     thirdparty/imgui
     thirdparty/imgui/backends
 )

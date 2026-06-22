@@ -15,7 +15,10 @@ struct FileChange {
     std::string target_content;   // What was replaced
     std::string replacement_content; // What it was replaced with
     bool reverted = false;
+    std::string message_id;       // The ID of the message/turn that caused this change
 };
+
+extern thread_local std::string current_tool_message_id;
 
 // Tool functions exposed to the AI model
 std::string list_directory(const std::string& path_str, bool recursive = true);
