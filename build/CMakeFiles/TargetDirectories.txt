@@ -1,0 +1,3 @@
+D:/access/build/CMakeFiles/lmstudio_chat_client.dir
+D:/access/build/CMakeFiles/edit_cache.dir
+D:/access/build/CMakeFiles/rebuild_cache.dir

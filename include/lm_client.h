@@ -31,6 +31,23 @@ public:
     int get_port() const { return port; }
     std::string get_model() const { return model; }
 
+    // Advanced Model & Optimization Parameters
+    void set_temperature(float temp) { temperature = temp; }
+    float get_temperature() const { return temperature; }
+    
+    void set_max_tokens(int max_t) { max_tokens = max_t; }
+    int get_max_tokens() const { return max_tokens; }
+    
+    void set_pruning_threshold(size_t threshold) { pruning_threshold = threshold; }
+    size_t get_pruning_threshold() const { return pruning_threshold; }
+    
+    void set_custom_system_prompt(const std::string& prompt) { custom_system_prompt = prompt; }
+    std::string get_custom_system_prompt() const { return custom_system_prompt; }
+
+    // Request Stats
+    size_t get_last_request_total_chars() const { return last_request_total_chars; }
+    size_t get_last_request_sent_chars() const { return last_request_sent_chars; }
+
     // Test connection to the local server
     bool check_connection(std::string& err_out);
 
@@ -50,6 +67,16 @@ private:
     std::string host = "localhost";
     int port = 1234;
     std::string model = "default"; // Will auto-detect or use user defined
+
+    // Advanced configs
+    float temperature = 0.7f;
+    int max_tokens = -1; // -1 means disabled
+    size_t pruning_threshold = 25000;
+    std::string custom_system_prompt;
+
+    // Stats
+    size_t last_request_total_chars = 0;
+    size_t last_request_sent_chars = 0;
 
     std::vector<Message> history;
     std::mutex history_mutex;

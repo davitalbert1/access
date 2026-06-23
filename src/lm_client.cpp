@@ -14,6 +14,38 @@ using json = nlohmann::json;
 
 namespace lm {
 
+static std::string format_list_directory_compact(const std::string& json_str) {
+    try {
+        json res = json::parse(json_str);
+        if (res.contains("error")) {
+            return "Erro ao listar diretorio: " + res["error"].get<std::string>();
+        }
+        if (!res.contains("files") || !res["files"].is_array()) {
+            return json_str;
+        }
+        std::stringstream ss;
+        auto& files = res["files"];
+        ss << "Itens no diretorio (" << files.size() << " itens):\n";
+        for (const auto& file : files) {
+            std::string path = file.value("path", "");
+            bool is_dir = file.value("is_directory", false);
+            size_t size = file.value("size", 0);
+            
+            ss << "- " << (is_dir ? "[DIR]" : "[FILE]") << " " << path;
+            if (!is_dir) {
+                ss << " (" << size << " bytes)";
+            }
+            ss << "\n";
+        }
+        if (res.value("truncated", false)) {
+            ss << "... (lista truncada para " << files.size() << " itens)\n";
+        }
+        return ss.str();
+    } catch (...) {
+        return json_str;
+    }
+}
+
 // Helper to get current timestamp
 static std::string get_current_timestamp() {
     auto now = std::chrono::system_clock::now();
@@ -39,11 +71,12 @@ LMClient::LMClient() {
     }
     
     // Set a default system prompt
-    set_system_prompt("Voce e um assistente de programacao util. "
-                      "Voce pode ler e modificar arquivos locais usando as ferramentas fornecidas. "
-                      "Sempre use a ferramenta modify_file se precisar editar um arquivo. "
-                      "Quando for ler pastas ou arquivos, informe os caminhos corretos. "
-                      "Sempre responda em Portugues.");
+    custom_system_prompt = "Voce e um assistente de programacao util. "
+                           "Voce pode ler e modificar arquivos locais usando as ferramentas fornecidas. "
+                           "Sempre use a ferramenta modify_file se precisar editar um arquivo. "
+                           "Quando for ler pastas ou arquivos, informe os caminhos corretos. "
+                           "Sempre responda em Portugues.";
+    set_system_prompt(custom_system_prompt);
 }
 
 LMClient::~LMClient() {
@@ -178,13 +211,41 @@ void LMClient::send_message(const std::string& user_prompt,
             {
                 std::lock_guard<std::mutex> lock(history_mutex);
                 json messages = json::array();
+                
+                // Calculate total size of the message history to check if pruning is needed
+                size_t total_chars = 0;
+                size_t sent_chars = 0;
+                for (const auto& msg : history) {
+                    if (msg.role == "system_info") continue;
+                    total_chars += msg.content.length();
+                }
+                
+                bool need_pruning = (total_chars > pruning_threshold);
+                
                 for (const auto& msg : history) {
                     // Skip internal UI-only messages
                     if (msg.role == "system_info") continue;
                     
                     json m = { {"role", msg.role} };
-                    if (!msg.content.empty()) {
-                        m["content"] = msg.content;
+                    
+                    std::string content_to_send = msg.content;
+                    
+                    // 1. Always format list_directory responses compactly to save tokens
+                    if (msg.role == "tool" && msg.name == "list_directory") {
+                        content_to_send = format_list_directory_compact(msg.content);
+                    }
+                    
+                    // 2. Prune/truncate large old tool responses if history exceeds the threshold
+                    if (need_pruning && msg.role == "tool" && msg.msg_id != turn_id && !msg.msg_id.empty()) {
+                        if (content_to_send.length() > 500) {
+                            content_to_send = "[Conteudo da ferramenta '" + msg.name + "' ocultado (" + 
+                                              std::to_string(content_to_send.length()) + 
+                                              " caracteres) para economizar tokens. Chame a ferramenta novamente se precisar.]";
+                        }
+                    }
+                    
+                    if (!content_to_send.empty()) {
+                        m["content"] = content_to_send;
                     } else if (msg.role == "assistant" && !msg.tool_calls.is_null()) {
                         m["content"] = nullptr; // OpenAI spec requires content to be null or empty string when tool_calls exist
                     } else {
@@ -194,11 +255,23 @@ void LMClient::send_message(const std::string& user_prompt,
                     if (!msg.name.empty()) m["name"] = msg.name;
                     if (!msg.tool_call_id.empty()) m["tool_call_id"] = msg.tool_call_id;
                     if (!msg.tool_calls.is_null()) m["tool_calls"] = msg.tool_calls;
+                    
+                    // Track size of what is actually sent
+                    sent_chars += content_to_send.length();
+                    
                     messages.push_back(m);
                 }
+                
+                last_request_total_chars = total_chars;
+                last_request_sent_chars = sent_chars;
+                
                 req["messages"] = messages;
             }
             req["model"] = model;
+            req["temperature"] = temperature;
+            if (max_tokens > 0) {
+                req["max_tokens"] = max_tokens;
+            }
             
             // Define tools
             json tools_array = json::array();
@@ -207,7 +280,7 @@ void LMClient::send_message(const std::string& user_prompt,
                 {"type", "function"},
                 {"function", {
                     {"name", "list_directory"},
-                    {"description", "Lista arquivos e pastas em um caminho informado de forma recursiva ou nao. Retorna lista JSON com informacoes."},
+                    {"description", "Lista arquivos e pastas em um caminho informado de forma recursiva ou nao. Retorna uma listagem de texto compacta com informacoes de tipo, caminho e tamanho."},
                     {"parameters", {
                         {"type", "object"},
                         {"properties", {

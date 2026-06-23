@@ -25,6 +25,7 @@ private:
     
     // Chat UI state
     char input_buf[1024 * 16]; // Large buffer for multiline chat inputs
+    char system_prompt_buf[1024 * 4]; // Buffer for editing system prompt
     bool is_generating = false;
     std::string current_status = "";
     bool scroll_to_bottom = false;
@@ -46,6 +47,7 @@ private:
     
     // File Browser state
     char browser_path_buf[512];
+    char file_filter_buf[128]; // Buffer for file browser filtering
     std::string selected_file_path = "";
     std::string selected_file_content = "";
     bool show_file_content_popup = false;

@@ -91,6 +91,8 @@ ChatApp::ChatApp() {
     port = 1234;
     std::strcpy(model_buf, "default");
     std::strcpy(input_buf, "");
+    std::strcpy(system_prompt_buf, "");
+    std::strcpy(file_filter_buf, "");
     
     // Default workspace path is current path
     std::string current_path = fs::current_path().generic_string();
@@ -439,12 +441,28 @@ void ChatApp::render_left_panel() {
     }
     
     // Message Input bar
-    ImGui::PushItemWidth(-70.0f);
+    ImGui::PushItemWidth(-160.0f);
     bool enter_pressed = ImGui::InputText("##ChatInput", input_buf, sizeof(input_buf), ImGuiInputTextFlags_EnterReturnsTrue);
     ImGui::PopItemWidth();
     ImGui::SameLine();
     
-    bool send_clicked = ImGui::Button("Enviar", ImVec2(60, 0));
+    bool send_clicked = ImGui::Button("Enviar", ImVec2(70, 0));
+    ImGui::SameLine();
+    
+    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.45f, 0.15f, 0.15f, 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.6f, 0.2f, 0.2f, 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.35f, 0.1f, 0.1f, 1.0f));
+    bool clear_clicked = ImGui::Button("Limpar Chat", ImVec2(80, 0));
+    ImGui::PopStyleColor(3);
+    
+    if (clear_clicked) {
+        client.clear_history();
+        lm::Message clear_msg;
+        clear_msg.role = "system_info";
+        clear_msg.timestamp = "";
+        clear_msg.content = "Historico de conversa limpo.";
+        client.add_message(clear_msg);
+    }
     
     if ((enter_pressed || send_clicked) && !is_generating && std::strlen(input_buf) > 0) {
         std::string prompt(input_buf);
@@ -454,15 +472,13 @@ void ChatApp::render_left_panel() {
         current_status = "Iniciando requisicao...";
         scroll_to_bottom = true;
         
-        // Dynamically set system prompt with current directory path
+        // Update custom system prompt in client
+        client.set_custom_system_prompt(system_prompt_buf);
+        
+        // Dynamically set system prompt with current directory path appended
         std::string browser_path(browser_path_buf);
-        std::string system_prompt = 
-            "Voce e um assistente de programacao util. "
-            "Voce pode ler e modificar arquivos locais usando as ferramentas fornecidas. "
-            "Sempre use a ferramenta modify_file se precisar editar um arquivo. "
-            "Quando for ler pastas ou arquivos, informe os caminhos corretos. "
-            "Sempre responda em Portugues. "
-            "O diretorio de trabalho atual (aberto no visualizador de arquivos) e: " + browser_path + ". "
+        std::string system_prompt = client.get_custom_system_prompt() + 
+            "\nO diretorio de trabalho atual (aberto no visualizador de arquivos) e: " + browser_path + ". "
             "Use este diretorio como base para as operacoes de arquivos e pastas.";
         client.set_system_prompt(system_prompt);
         
@@ -490,10 +506,9 @@ void ChatApp::render_right_panel() {
         // Tab 1: File Browser
         if (ImGui::BeginTabItem("Explorador de Arquivos")) {
             ImGui::InputText("Caminho Root", browser_path_buf, sizeof(browser_path_buf));
-            ImGui::SameLine();
-            if (ImGui::Button("Recarregar")) {
-                // Do nothing, list will refresh on loop
-            }
+            
+            // File search filter input
+            ImGui::InputText("Filtrar arquivos", file_filter_buf, sizeof(file_filter_buf));
             
             ImGui::Separator();
             
@@ -519,6 +534,17 @@ void ChatApp::render_right_panel() {
                         std::string path = file["path"].get<std::string>();
                         bool is_dir = file["is_directory"].get<bool>();
                         size_t size = file["size"].get<size_t>();
+                        
+                        // Check if file name matches the filter (case-insensitive)
+                        if (std::strlen(file_filter_buf) > 0) {
+                            std::string filter_str(file_filter_buf);
+                            std::string name_lower = name;
+                            std::transform(name_lower.begin(), name_lower.end(), name_lower.begin(), ::tolower);
+                            std::transform(filter_str.begin(), filter_str.end(), filter_str.begin(), ::tolower);
+                            if (name_lower.find(filter_str) == std::string::npos) {
+                                continue;
+                            }
+                        }
                         
                         std::string icon = is_dir ? "[DIR] " : "[FILE] ";
                         std::string label = icon + name;
@@ -637,6 +663,87 @@ void ChatApp::render_right_panel() {
             ImGui::BulletText("path (string): Caminho do arquivo");
             ImGui::BulletText("target_content (string): Bloco exato a ser substituido (deve ser unico). Vazio se for criar novo arquivo.");
             ImGui::BulletText("replacement_content (string): Bloco de texto novo");
+            
+            ImGui::EndChild();
+            ImGui::EndTabItem();
+        }
+        
+        // Tab 4: Advanced Settings & Stats
+        if (ImGui::BeginTabItem("Configuracoes")) {
+            ImGui::BeginChild("SettingsArea", ImVec2(0, 0), true);
+            
+            ImGui::TextColored(ImVec4(0.6f, 0.8f, 1.0f, 1.0f), "PARAMETROS DO MODELO");
+            ImGui::Separator();
+            
+            float temp = client.get_temperature();
+            if (ImGui::SliderFloat("Temperatura", &temp, 0.0f, 2.0f, "%.2f")) {
+                client.set_temperature(temp);
+            }
+            ImGui::TextDisabled("Valores baixos (ex: 0.2) sao mais precisos; altos sao mais criativos.");
+            
+            int max_t = client.get_max_tokens();
+            bool limit_tokens = (max_t > 0);
+            if (ImGui::Checkbox("Limitar tamanho da resposta (max_tokens)", &limit_tokens)) {
+                if (limit_tokens) {
+                    client.set_max_tokens(1024);
+                } else {
+                    client.set_max_tokens(-1);
+                }
+            }
+            if (limit_tokens) {
+                max_t = client.get_max_tokens();
+                if (ImGui::InputInt("Tokens maximos", &max_t)) {
+                    if (max_t < 1) max_t = 1;
+                    client.set_max_tokens(max_t);
+                }
+            }
+            
+            ImGui::Spacing();
+            ImGui::TextColored(ImVec4(0.6f, 0.8f, 1.0f, 1.0f), "OTIMIZACAO DE CONTEXTO (TOKENS)");
+            ImGui::Separator();
+            
+            int thresh = (int)client.get_pruning_threshold();
+            if (ImGui::SliderInt("Limiar de Poda (Pruning)", &thresh, 5000, 100000, "%d chars")) {
+                client.set_pruning_threshold((size_t)thresh);
+            }
+            ImGui::TextDisabled("Poda arquivos e diretorios antigos quando o historico enviado ultrapassar este limite.");
+            
+            // Statistics
+            ImGui::Spacing();
+            ImGui::TextColored(ImVec4(0.4f, 0.9f, 0.4f, 1.0f), "ESTATISTICAS DE CONTEXTO");
+            ImGui::Separator();
+            
+            size_t total_c = client.get_last_request_total_chars();
+            size_t sent_c = client.get_last_request_sent_chars();
+            
+            ImGui::Text("Tamanho total do historico local: %zu caracteres", total_c);
+            ImGui::Text("Tamanho real enviado ao modelo:  %zu caracteres", sent_c);
+            
+            if (total_c > 0) {
+                if (sent_c < total_c) {
+                    size_t saved = total_c - sent_c;
+                    double percent = ((double)saved / total_c) * 100.0;
+                    ImGui::TextColored(ImVec4(0.4f, 0.9f, 0.4f, 1.0f), 
+                        "Economia de Contexto: %zu caracteres salvos (~%.1f%%)", saved, percent);
+                } else {
+                    ImGui::TextColored(ImVec4(0.8f, 0.8f, 0.8f, 1.0f), "Nenhum dado podado no ultimo request.");
+                }
+            } else {
+                ImGui::TextDisabled("Envie uma mensagem para exibir estatisticas.");
+            }
+            
+            ImGui::Spacing();
+            ImGui::TextColored(ImVec4(0.6f, 0.8f, 1.0f, 1.0f), "PROMPT DE SISTEMA CUSTOMIZADO");
+            ImGui::Separator();
+            ImGui::InputTextMultiline("##SystemPrompt", system_prompt_buf, sizeof(system_prompt_buf), ImVec2(-1.0f, 180.0f));
+            if (ImGui::Button("Redefinir Padrao")) {
+                std::strcpy(system_prompt_buf, "Voce e um assistente de programacao util. "
+                                               "Voce pode ler e modificar arquivos locais usando as ferramentas fornecidas. "
+                                               "Sempre use a ferramenta modify_file se precisar editar um arquivo. "
+                                               "Quando for ler pastas ou arquivos, informe os caminhos corretos. "
+                                               "Sempre responda em Portugues.");
+                client.set_custom_system_prompt(system_prompt_buf);
+            }
             
             ImGui::EndChild();
             ImGui::EndTabItem();
@@ -769,6 +876,12 @@ void ChatApp::save_config() {
         cfg["model"] = std::string(model_buf);
         cfg["browser_path"] = std::string(browser_path_buf);
         
+        // Advanced configurations
+        cfg["temperature"] = client.get_temperature();
+        cfg["max_tokens"] = client.get_max_tokens();
+        cfg["pruning_threshold"] = client.get_pruning_threshold();
+        cfg["custom_system_prompt"] = std::string(system_prompt_buf);
+        
         std::ofstream out(CONFIG_FILE);
         if (out.is_open()) {
             out << cfg.dump(2);
@@ -777,6 +890,10 @@ void ChatApp::save_config() {
 }
 
 void ChatApp::load_config() {
+    // Set default buffers in case config parsing fails
+    std::strcpy(file_filter_buf, "");
+    std::strcpy(system_prompt_buf, client.get_custom_system_prompt().c_str());
+    
     try {
         std::ifstream in(CONFIG_FILE);
         if (in.is_open()) {
@@ -793,6 +910,23 @@ void ChatApp::load_config() {
                 std::string m = cfg["model"].get<std::string>();
                 std::strcpy(model_buf, m.c_str());
             }
+            
+            // Advanced parameters
+            if (cfg.contains("temperature") && cfg["temperature"].is_number()) {
+                client.set_temperature(cfg["temperature"].get<float>());
+            }
+            if (cfg.contains("max_tokens") && cfg["max_tokens"].is_number_integer()) {
+                client.set_max_tokens(cfg["max_tokens"].get<int>());
+            }
+            if (cfg.contains("pruning_threshold") && cfg["pruning_threshold"].is_number_integer()) {
+                client.set_pruning_threshold(cfg["pruning_threshold"].get<size_t>());
+            }
+            if (cfg.contains("custom_system_prompt") && cfg["custom_system_prompt"].is_string()) {
+                std::string csp = cfg["custom_system_prompt"].get<std::string>();
+                std::strcpy(system_prompt_buf, csp.c_str());
+                client.set_custom_system_prompt(csp);
+            }
+            
             if (cfg.contains("browser_path") && cfg["browser_path"].is_string()) {
                 std::string bp = cfg["browser_path"].get<std::string>();
                 fs::path p(bp);
