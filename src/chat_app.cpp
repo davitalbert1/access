@@ -1,6 +1,6 @@
-#include "chat_app.h"
-#include "tools.h"
-#include "diff_viewer.h"
+#include "../include/chat_app.h"
+#include "../include/tools.h"
+#include "../include/diff_viewer.h"
 #include <imgui.h>
 #include <cstring>
 #include <algorithm>
@@ -180,49 +180,41 @@ void ChatApp::apply_custom_theme() {
     
     // Slates/Dark Palette
     ImVec4* colors = style.Colors;
-    colors[ImGuiCol_Text]                   = ImVec4(0.90f, 0.90f, 0.95f, 1.00f);
-    colors[ImGuiCol_TextDisabled]           = ImVec4(0.50f, 0.50f, 0.55f, 1.00f);
-    colors[ImGuiCol_WindowBg]               = ImVec4(0.09f, 0.09f, 0.10f, 1.00f);
-    colors[ImGuiCol_ChildBg]                = ImVec4(0.12f, 0.12f, 0.14f, 1.00f);
-    colors[ImGuiCol_PopupBg]                = ImVec4(0.11f, 0.11f, 0.13f, 0.98f);
-    colors[ImGuiCol_Border]                 = ImVec4(0.20f, 0.20f, 0.22f, 1.00f);
-    colors[ImGuiCol_BorderShadow]           = ImVec4(0.00f, 0.00f, 0.00f, 0.00f);
-    
-    colors[ImGuiCol_FrameBg]                = ImVec4(0.15f, 0.15f, 0.17f, 1.00f);
-    colors[ImGuiCol_FrameBgHovered]         = ImVec4(0.22f, 0.22f, 0.25f, 1.00f);
-    colors[ImGuiCol_FrameBgActive]          = ImVec4(0.18f, 0.18f, 0.21f, 1.00f);
-    
-    colors[ImGuiCol_TitleBg]                = ImVec4(0.08f, 0.08f, 0.10f, 1.00f);
-    colors[ImGuiCol_TitleBgActive]          = ImVec4(0.12f, 0.12f, 0.14f, 1.00f);
-    colors[ImGuiCol_TitleBgCollapsed]       = ImVec4(0.08f, 0.08f, 0.10f, 0.50f);
-    
-    colors[ImGuiCol_MenuBarBg]              = ImVec4(0.14f, 0.14f, 0.16f, 1.00f);
-    colors[ImGuiCol_ScrollbarBg]            = ImVec4(0.08f, 0.08f, 0.10f, 1.00f);
-    colors[ImGuiCol_ScrollbarGrab]          = ImVec4(0.25f, 0.25f, 0.28f, 1.00f);
-    colors[ImGuiCol_ScrollbarGrabHovered]    = ImVec4(0.32f, 0.32f, 0.35f, 1.00f);
-    colors[ImGuiCol_ScrollbarGrabActive]     = ImVec4(0.40f, 0.40f, 0.45f, 1.00f);
-    
-    colors[ImGuiCol_CheckMark]              = ImVec4(0.50f, 0.55f, 0.85f, 1.00f);
-    colors[ImGuiCol_SliderGrab]             = ImVec4(0.40f, 0.45f, 0.75f, 1.00f);
-    colors[ImGuiCol_SliderGrabActive]       = ImVec4(0.50f, 0.55f, 0.85f, 1.00f);
-    
-    colors[ImGuiCol_Button]                 = ImVec4(0.22f, 0.25f, 0.38f, 1.00f); // Slate Blue
-    colors[ImGuiCol_ButtonHovered]          = ImVec4(0.28f, 0.32f, 0.48f, 1.00f);
-    colors[ImGuiCol_ButtonActive]           = ImVec4(0.18f, 0.20f, 0.30f, 1.00f);
-    
-    colors[ImGuiCol_Header]                 = ImVec4(0.20f, 0.22f, 0.32f, 1.00f);
-    colors[ImGuiCol_HeaderHovered]          = ImVec4(0.25f, 0.28f, 0.40f, 1.00f);
-    colors[ImGuiCol_HeaderActive]           = ImVec4(0.18f, 0.20f, 0.30f, 1.00f);
-    
-    colors[ImGuiCol_Separator]              = ImVec4(0.20f, 0.20f, 0.22f, 1.00f);
-    colors[ImGuiCol_SeparatorHovered]       = ImVec4(0.25f, 0.25f, 0.30f, 1.00f);
-    colors[ImGuiCol_SeparatorActive]        = ImVec4(0.35f, 0.35f, 0.40f, 1.00f);
-    
-    colors[ImGuiCol_Tab]                    = ImVec4(0.14f, 0.14f, 0.16f, 1.00f);
-    colors[ImGuiCol_TabHovered]             = ImVec4(0.22f, 0.22f, 0.26f, 1.00f);
-    colors[ImGuiCol_TabActive]              = ImVec4(0.20f, 0.22f, 0.32f, 1.00f);
-    colors[ImGuiCol_TabUnfocused]           = ImVec4(0.10f, 0.10f, 0.12f, 1.00f);
-    colors[ImGuiCol_TabUnfocusedActive]     = ImVec4(0.14f, 0.14f, 0.16f, 1.00f);
+    colors[ImGuiCol_Text] = ImVec4(0.90f, 0.90f, 0.95f, 1.00f);
+    colors[ImGuiCol_TextDisabled] = ImVec4(0.50f, 0.50f, 0.55f, 1.00f);
+    colors[ImGuiCol_WindowBg] = ImVec4(0.09f, 0.09f, 0.10f, 1.00f);
+    colors[ImGuiCol_ChildBg] = ImVec4(0.12f, 0.12f, 0.14f, 1.00f);
+    colors[ImGuiCol_PopupBg] = ImVec4(0.11f, 0.11f, 0.13f, 0.98f);
+    colors[ImGuiCol_Border] = ImVec4(0.20f, 0.20f, 0.22f, 1.00f);
+    colors[ImGuiCol_BorderShadow] = ImVec4(0.00f, 0.00f, 0.00f, 0.00f);
+    colors[ImGuiCol_FrameBg] = ImVec4(0.15f, 0.15f, 0.17f, 1.00f);
+    colors[ImGuiCol_FrameBgHovered] = ImVec4(0.22f, 0.22f, 0.25f, 1.00f);
+    colors[ImGuiCol_FrameBgActive] = ImVec4(0.18f, 0.18f, 0.21f, 1.00f);
+    colors[ImGuiCol_TitleBg] = ImVec4(0.08f, 0.08f, 0.10f, 1.00f);
+    colors[ImGuiCol_TitleBgActive] = ImVec4(0.12f, 0.12f, 0.14f, 1.00f);
+    colors[ImGuiCol_TitleBgCollapsed] = ImVec4(0.08f, 0.08f, 0.10f, 0.50f);
+    colors[ImGuiCol_MenuBarBg] = ImVec4(0.14f, 0.14f, 0.16f, 1.00f);
+    colors[ImGuiCol_ScrollbarBg] = ImVec4(0.08f, 0.08f, 0.10f, 1.00f);
+    colors[ImGuiCol_ScrollbarGrab] = ImVec4(0.25f, 0.25f, 0.28f, 1.00f);
+    colors[ImGuiCol_ScrollbarGrabHovered] = ImVec4(0.32f, 0.32f, 0.35f, 1.00f);
+    colors[ImGuiCol_ScrollbarGrabActive] = ImVec4(0.40f, 0.40f, 0.45f, 1.00f);
+    colors[ImGuiCol_CheckMark] = ImVec4(0.50f, 0.55f, 0.85f, 1.00f);
+    colors[ImGuiCol_SliderGrab] = ImVec4(0.40f, 0.45f, 0.75f, 1.00f);
+    colors[ImGuiCol_SliderGrabActive] = ImVec4(0.50f, 0.55f, 0.85f, 1.00f);
+    colors[ImGuiCol_Button] = ImVec4(0.22f, 0.25f, 0.38f, 1.00f); // Slate Blue
+    colors[ImGuiCol_ButtonHovered] = ImVec4(0.28f, 0.32f, 0.48f, 1.00f);
+    colors[ImGuiCol_ButtonActive] = ImVec4(0.18f, 0.20f, 0.30f, 1.00f);
+    colors[ImGuiCol_Header] = ImVec4(0.20f, 0.22f, 0.32f, 1.00f);
+    colors[ImGuiCol_HeaderHovered] = ImVec4(0.25f, 0.28f, 0.40f, 1.00f);
+    colors[ImGuiCol_HeaderActive] = ImVec4(0.18f, 0.20f, 0.30f, 1.00f);
+    colors[ImGuiCol_Separator] = ImVec4(0.20f, 0.20f, 0.22f, 1.00f);
+    colors[ImGuiCol_SeparatorHovered] = ImVec4(0.25f, 0.25f, 0.30f, 1.00f);
+    colors[ImGuiCol_SeparatorActive] = ImVec4(0.35f, 0.35f, 0.40f, 1.00f);
+    colors[ImGuiCol_Tab] = ImVec4(0.14f, 0.14f, 0.16f, 1.00f);
+    colors[ImGuiCol_TabHovered] = ImVec4(0.22f, 0.22f, 0.26f, 1.00f);
+    colors[ImGuiCol_TabActive] = ImVec4(0.20f, 0.22f, 0.32f, 1.00f);
+    colors[ImGuiCol_TabUnfocused] = ImVec4(0.10f, 0.10f, 0.12f, 1.00f);
+    colors[ImGuiCol_TabUnfocusedActive] = ImVec4(0.14f, 0.14f, 0.16f, 1.00f);
 }
 
 void ChatApp::render() {
@@ -279,9 +271,7 @@ void ChatApp::render_left_panel() {
     ImGui::PopItemWidth();
     
     ImGui::SameLine();
-    if (ImGui::Button("Conectar / Atualizar")) {
-        check_server_connection();
-    }
+    if (ImGui::Button("Conectar / Atualizar")) check_server_connection();
     
     // Status text
     if (connected) {
@@ -322,8 +312,7 @@ void ChatApp::render_left_panel() {
             
             ImGui::PopStyleColor();
             ImGui::Separator();
-        } 
-        else if (msg.role == "system") {
+        } else if (msg.role == "system") {
             // Internal System prompt usually hidden or shown small
             std::string header_id = "Prompt de Sistema (Oculto ao LLM)##" + std::to_string(i);
             if (ImGui::CollapsingHeader(header_id.c_str())) {
@@ -343,8 +332,7 @@ void ChatApp::render_left_panel() {
                 ImGui::PopStyleColor(2);
                 ImGui::PopStyleVar();
             }
-        } 
-        else if (msg.role == "tool") {
+        } else if (msg.role == "tool") {
             std::string label = "Ferramenta executada: " + msg.name + " (" + msg.timestamp + ")##" + std::to_string(i);
             if (ImGui::CollapsingHeader(label.c_str())) {
                 ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.6f, 0.9f, 0.6f, 1.0f));
@@ -367,8 +355,7 @@ void ChatApp::render_left_panel() {
                 
                 ImGui::PopStyleColor();
             }
-        } 
-        else {
+        } else {
             bool is_user = (msg.role == "user");
             ImVec4 label_color = is_user ? ImVec4(0.4f, 0.8f, 1.0f, 1.0f) : ImVec4(0.8f, 0.5f, 1.0f, 1.0f);
             std::string sender = is_user ? "Usuario" : "Modelo AI";
@@ -551,9 +538,7 @@ void ChatApp::render_right_panel() {
                         
                         if (is_dir) {
                             if (ImGui::Selectable(label.c_str(), false, ImGuiSelectableFlags_AllowDoubleClick)) {
-                                if (ImGui::IsMouseDoubleClicked(0)) {
-                                    std::strcpy(browser_path_buf, path.c_str());
-                                }
+                                if (ImGui::IsMouseDoubleClicked(0)) std::strcpy(browser_path_buf, path.c_str());
                             }
                         } else {
                             if (ImGui::Selectable(label.c_str())) {
@@ -579,9 +564,8 @@ void ChatApp::render_right_panel() {
             if (history.empty()) {
                 ImGui::Text("Nenhuma alteracao efetuada pelo modelo ate o momento.");
             } else {
-                if (ImGui::Button("Limpar Historico")) {
-                    tools::clear_change_history();
-                }
+                if (ImGui::Button("Limpar Historico")) tools::clear_change_history();
+
                 ImGui::Separator();
                 
                 ImGui::BeginChild("HistoryList", ImVec2(0, 0), true);
@@ -676,9 +660,7 @@ void ChatApp::render_right_panel() {
             ImGui::Separator();
             
             float temp = client.get_temperature();
-            if (ImGui::SliderFloat("Temperatura", &temp, 0.0f, 2.0f, "%.2f")) {
-                client.set_temperature(temp);
-            }
+            if (ImGui::SliderFloat("Temperatura", &temp, 0.0f, 2.0f, "%.2f")) client.set_temperature(temp);
             ImGui::TextDisabled("Valores baixos (ex: 0.2) sao mais precisos; altos sao mais criativos.");
             
             int max_t = client.get_max_tokens();
@@ -723,8 +705,7 @@ void ChatApp::render_right_panel() {
                 if (sent_c < total_c) {
                     size_t saved = total_c - sent_c;
                     double percent = ((double)saved / total_c) * 100.0;
-                    ImGui::TextColored(ImVec4(0.4f, 0.9f, 0.4f, 1.0f), 
-                        "Economia de Contexto: %zu caracteres salvos (~%.1f%%)", saved, percent);
+                    ImGui::TextColored(ImVec4(0.4f, 0.9f, 0.4f, 1.0f), "Economia de Contexto: %zu caracteres salvos (~%.1f%%)", saved, percent);
                 } else {
                     ImGui::TextColored(ImVec4(0.8f, 0.8f, 0.8f, 1.0f), "Nenhum dado podado no ultimo request.");
                 }
@@ -754,9 +735,7 @@ void ChatApp::render_right_panel() {
 }
 
 void ChatApp::render_diff_popup() {
-    if (show_diff_popup) {
-        ImGui::OpenPopup("Visualizador de Diff");
-    }
+    if (show_diff_popup) ImGui::OpenPopup("Visualizador de Diff");
     
     // Style popup size
     ImGui::SetNextWindowSize(ImVec2(800, 600), ImGuiCond_FirstUseEver);
@@ -847,9 +826,7 @@ void ChatApp::render_diff_popup() {
 }
 
 void ChatApp::render_file_content_popup() {
-    if (show_file_content_popup) {
-        ImGui::OpenPopup("Visualizar Arquivo");
-    }
+    if (show_file_content_popup) ImGui::OpenPopup("Visualizar Arquivo");
     
     ImGui::SetNextWindowSize(ImVec2(800, 600), ImGuiCond_FirstUseEver);
     if (ImGui::BeginPopupModal("Visualizar Arquivo", &show_file_content_popup)) {
@@ -883,9 +860,7 @@ void ChatApp::save_config() {
         cfg["custom_system_prompt"] = std::string(system_prompt_buf);
         
         std::ofstream out(CONFIG_FILE);
-        if (out.is_open()) {
-            out << cfg.dump(2);
-        }
+        if (out.is_open()) out << cfg.dump(2);
     } catch (const std::exception& e) {}
 }
 
@@ -947,9 +922,7 @@ void ChatApp::load_config() {
 }
 
 void ChatApp::render_revert_confirm_popup() {
-    if (show_revert_confirm_popup) {
-        ImGui::OpenPopup("Confirmar Reversao");
-    }
+    if (show_revert_confirm_popup) ImGui::OpenPopup("Confirmar Reversao");
     
     ImGui::SetNextWindowSize(ImVec2(550, 260), ImGuiCond_Always);
     if (ImGui::BeginPopupModal("Confirmar Reversao", &show_revert_confirm_popup, ImGuiWindowFlags_NoResize)) {
@@ -958,9 +931,7 @@ void ChatApp::render_revert_confirm_popup() {
         ImGui::Separator();
         
         ImGui::BeginChild("RevertFilesList", ImVec2(0, 110), true);
-        for (const auto& file : revert_affected_files) {
-            ImGui::BulletText("%s", file.c_str());
-        }
+        for (const auto& file : revert_affected_files) ImGui::BulletText("%s", file.c_str());
         ImGui::EndChild();
         
         ImGui::Separator();
@@ -992,5 +963,4 @@ void ChatApp::render_revert_confirm_popup() {
         ImGui::EndPopup();
     }
 }
-
-} // namespace gui
+}

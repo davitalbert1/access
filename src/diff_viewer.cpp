@@ -1,4 +1,4 @@
-#include "diff_viewer.h"
+#include "../include/diff_viewer.h"
 #include <sstream>
 #include <algorithm>
 #include <vector>
@@ -11,15 +11,11 @@ static std::vector<std::string> split_lines(const std::string& str) {
     std::istringstream stream(str);
     while (std::getline(stream, line)) {
         // Strip trailing \r (Windows endings)
-        if (!line.empty() && line.back() == '\r') {
-            line.pop_back();
-        }
+        if (!line.empty() && line.back() == '\r') line.pop_back();
         lines.push_back(line);
     }
     // Handle empty file/string or ending with a newline
-    if (str.empty()) {
-        lines.push_back("");
-    }
+    if (str.empty()) lines.push_back("");
     return lines;
 }
 
@@ -31,8 +27,6 @@ std::vector<DiffLine> generate_diff(const std::string& original, const std::stri
     int n = lines_mod.size();
     
     // DP table for LCS
-    // If the file is very large (e.g. > 2000 lines), a full LCS can be slow.
-    // However, for standard files edited by LLMs, it is typically small and fast.
     std::vector<std::vector<int>> dp(m + 1, std::vector<int>(n + 1, 0));
     for (int i = 1; i <= m; ++i) {
         for (int j = 1; j <= n; ++j) {
@@ -64,5 +58,4 @@ std::vector<DiffLine> generate_diff(const std::string& original, const std::stri
     std::reverse(result.begin(), result.end());
     return result;
 }
-
-} // namespace diff
+}

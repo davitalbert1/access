@@ -1,6 +1,5 @@
 #pragma once
-
-#include "lm_client.h"
+#include "../include/lm_client.h"
 #include <string>
 #include <vector>
 

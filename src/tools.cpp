@@ -1,4 +1,4 @@
-#include "tools.h"
+#include "../include/tools.h"
 #include <filesystem>
 #include <fstream>
 #include <sstream>
@@ -28,16 +28,12 @@ static std::string get_current_timestamp() {
 std::string list_directory(const std::string& path_str, bool recursive) {
     try {
         fs::path p(path_str);
-        if (!fs::exists(p)) {
-            return json({{"error", "Path does not exist: " + path_str}}).dump();
-        }
-        if (!fs::is_directory(p)) {
-            return json({{"error", "Path is not a directory: " + path_str}}).dump();
-        }
+        if (!fs::exists(p)) return json({{"error", "Path does not exist: " + path_str}}).dump();
+        if (!fs::is_directory(p)) return json({{"error", "Path is not a directory: " + path_str}}).dump();
 
         json files = json::array();
         int count = 0;
-        const int MAX_FILES = 500; // Limit total items to prevent huge messages
+        const int MAX_FILES = 5000;
         bool truncated = false;
 
         auto add_entry = [&](const fs::directory_entry& entry) {
@@ -86,16 +82,10 @@ std::string list_directory(const std::string& path_str, bool recursive) {
 std::string read_file(const std::string& filepath_str) {
     try {
         fs::path p(filepath_str);
-        if (!fs::exists(p)) {
-            return "Error: File does not exist: " + filepath_str;
-        }
-        if (!fs::is_regular_file(p)) {
-            return "Error: Path is not a regular file: " + filepath_str;
-        }
+        if (!fs::exists(p)) return "Error: File does not exist: " + filepath_str;
+        if (!fs::is_regular_file(p)) return "Error: Path is not a regular file: " + filepath_str;
         std::ifstream in(p, std::ios::in | std::ios::binary);
-        if (!in.is_open()) {
-            return "Error: Could not open file for reading: " + filepath_str;
-        }
+        if (!in.is_open()) return "Error: Could not open file for reading: " + filepath_str;
         std::ostringstream sstr;
         sstr << in.rdbuf();
         return sstr.str();
@@ -104,10 +94,8 @@ std::string read_file(const std::string& filepath_str) {
     }
 }
 
-std::string modify_file(const std::string& filepath_str, 
-                        const std::string& target_content, 
-                        const std::string& replacement_content, 
-                        std::string& err_out) {
+std::string modify_file(const std::string& filepath_str, const std::string& target_content,
+                        const std::string& replacement_content, std::string& err_out) {
     try {
         fs::path p(filepath_str);
         std::string absolute_filepath = fs::absolute(p).generic_string();
@@ -211,10 +199,7 @@ bool revert_change(int change_id, std::string& err_out) {
             try {
                 fs::path p(change.filepath);
                 if (change.original_content.empty()) {
-                    // It was a new file creation, delete it
-                    if (fs::exists(p)) {
-                        fs::remove(p);
-                    }
+                    if (fs::exists(p)) fs::remove(p); // It was a new file creation, delete it
                 } else {
                     // Restore original content
                     std::ofstream out(p, std::ios::out | std::ios::binary | std::ios::trunc);
@@ -246,5 +231,4 @@ void clear_change_history() {
     std::lock_guard<std::mutex> lock(history_mutex);
     history.clear();
 }
-
-} // namespace tools
+}

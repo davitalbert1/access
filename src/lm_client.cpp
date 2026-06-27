@@ -1,5 +1,5 @@
-#include "lm_client.h"
-#include "tools.h"
+#include "../include/lm_client.h"
+#include "../include/tools.h"
 #include <curl/curl.h>
 #include <thread>
 #include <chrono>
@@ -32,9 +32,7 @@ static std::string format_list_directory_compact(const std::string& json_str) {
             size_t size = file.value("size", 0);
             
             ss << "- " << (is_dir ? "[DIR]" : "[FILE]") << " " << path;
-            if (!is_dir) {
-                ss << " (" << size << " bytes)";
-            }
+            if (!is_dir) ss << " (" << size << " bytes)";
             ss << "\n";
         }
         if (res.value("truncated", false)) {
@@ -75,7 +73,8 @@ LMClient::LMClient() {
                            "Voce pode ler e modificar arquivos locais usando as ferramentas fornecidas. "
                            "Sempre use a ferramenta modify_file se precisar editar um arquivo. "
                            "Quando for ler pastas ou arquivos, informe os caminhos corretos. "
-                           "Sempre responda em Portugues.";
+                           "Sempre responda em Portugues."
+                           "Caso seja necessário o uso de informações de diretórios e arquivos, use as ferramentas disponíveis para acessar estes itens.";
     set_system_prompt(custom_system_prompt);
 }
 
@@ -269,9 +268,7 @@ void LMClient::send_message(const std::string& user_prompt,
             }
             req["model"] = model;
             req["temperature"] = temperature;
-            if (max_tokens > 0) {
-                req["max_tokens"] = max_tokens;
-            }
+            if (max_tokens > 0) req["max_tokens"] = max_tokens;
             
             // Define tools
             json tools_array = json::array();
@@ -470,9 +467,7 @@ void LMClient::clear_history() {
         }
     }
     history.clear();
-    if (found_sys) {
-        history.push_back(sys_prompt);
-    }
+    if (found_sys) history.push_back(sys_prompt);
 }
 
 void LMClient::set_system_prompt(const std::string& prompt) {
@@ -491,5 +486,4 @@ void LMClient::set_system_prompt(const std::string& prompt) {
     sys.timestamp = get_current_timestamp();
     history.insert(history.begin(), sys);
 }
-
-} // namespace lm
+}
