@@ -69,5 +69,4 @@ private:
     void load_config();
     static constexpr const char* CONFIG_FILE = "config.json";
 };
-
-} // namespace gui
+}

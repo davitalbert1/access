@@ -9,13 +9,13 @@
 namespace lm {
 
 struct Message {
-    std::string role;          // "user", "assistant", "system", "tool"
+    std::string role; // "user", "assistant", "system", "tool"
     std::string content;
-    std::string name;          // For tool results (function name)
-    std::string tool_call_id;  // For tool results and matching tool calls
+    std::string name; // For tool results (function name)
+    std::string tool_call_id; // For tool results and matching tool calls
     nlohmann::json tool_calls; // Parsed tool calls from the assistant if any
     std::string timestamp;
-    std::string msg_id;        // Unique message identifier
+    std::string msg_id; // Unique message identifier
 };
 
 class LMClient {
@@ -90,5 +90,4 @@ private:
                              std::function<void(const std::string& status)> on_status_change, 
                              std::string& err_out);
 };
-
-} // namespace lm
+}

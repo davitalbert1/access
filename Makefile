@@ -41,9 +41,7 @@ $(VERBOSE).SILENT:
 cmake_force:
 .PHONY : cmake_force
 
-#=============================================================================
 # Set environment variables for the build.
-
 SHELL = cmd.exe
 
 # The CMake executable.
@@ -60,9 +58,6 @@ CMAKE_SOURCE_DIR = D:\access
 
 # The top-level build directory on which CMake was run.
 CMAKE_BINARY_DIR = D:\access
-
-#=============================================================================
-# Targets provided globally by CMake.
 
 # Special rule for the target edit_cache
 edit_cache:
@@ -115,7 +110,6 @@ depend:
 	$(CMAKE_COMMAND) -S$(CMAKE_SOURCE_DIR) -B$(CMAKE_BINARY_DIR) --check-build-system CMakeFiles\Makefile.cmake 1
 .PHONY : depend
 
-#=============================================================================
 # Target rules for targets named lmstudio_chat_client
 
 # Build rule for target.
@@ -436,14 +430,7 @@ help:
 	@echo ... thirdparty/imgui/imgui_widgets.s
 .PHONY : help
 
-
-
-#=============================================================================
 # Special targets to cleanup operation of make.
-
-# Special rule to run CMake to check the build system integrity.
-# No rule that depends on this can have commands that come from listfiles
-# because they might be regenerated.
 cmake_check_build_system:
 	$(CMAKE_COMMAND) -S$(CMAKE_SOURCE_DIR) -B$(CMAKE_BINARY_DIR) --check-build-system CMakeFiles\Makefile.cmake 0
 .PHONY : cmake_check_build_system

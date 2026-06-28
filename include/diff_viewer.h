@@ -21,4 +21,4 @@ struct DiffLine {
 // Generate line-by-line diff between two strings
 std::vector<DiffLine> generate_diff(const std::string& original, const std::string& modified);
 
-} // namespace diff
+}

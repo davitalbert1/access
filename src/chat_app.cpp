@@ -21,9 +21,7 @@ static std::string get_executable_directory() {
     GetModuleFileNameA(NULL, path, MAX_PATH);
     std::string path_str(path);
     size_t pos = path_str.find_last_of("\\/");
-    if (pos != std::string::npos) {
-        return path_str.substr(0, pos);
-    }
+    if (pos != std::string::npos) return path_str.substr(0, pos);
     return fs::current_path().generic_string();
 }
 #else
@@ -62,9 +60,7 @@ static std::string wrap_text(const std::string& text, float wrap_width) {
         }
     }
     flush_word();
-    if (!current_line.empty()) {
-        result += current_line;
-    }
+    if (!current_line.empty()) result += current_line;
     return result;
 }
 
@@ -76,9 +72,7 @@ static std::string format_size(size_t size) {
         size_d /= 1024.0;
         unit_idx++;
     }
-    if (unit_idx == 0) {
-        return std::to_string(size) + " B";
-    }
+    if (unit_idx == 0) return std::to_string(size) + " B";
     std::stringstream ss;
     ss << std::fixed << std::setprecision(1) << size_d << " " << units[unit_idx];
     return ss.str();

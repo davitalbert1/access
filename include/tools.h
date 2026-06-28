@@ -12,10 +12,10 @@ struct FileChange {
     std::string timestamp;
     std::string original_content; // Snapshot of the whole file before the change
     std::string modified_content; // Snapshot of the whole file after the change
-    std::string target_content;   // What was replaced
+    std::string target_content; // What was replaced
     std::string replacement_content; // What it was replaced with
     bool reverted = false;
-    std::string message_id;       // The ID of the message/turn that caused this change
+    std::string message_id; // The ID of the message/turn that caused this change
 };
 
 extern thread_local std::string current_tool_message_id;
@@ -32,5 +32,4 @@ std::string modify_file(const std::string& filepath_str,
 bool revert_change(int change_id, std::string& err_out);
 std::vector<FileChange> get_change_history();
 void clear_change_history();
-
-} // namespace tools
+}

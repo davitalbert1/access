@@ -20,9 +20,7 @@ static std::string format_list_directory_compact(const std::string& json_str) {
         if (res.contains("error")) {
             return "Erro ao listar diretorio: " + res["error"].get<std::string>();
         }
-        if (!res.contains("files") || !res["files"].is_array()) {
-            return json_str;
-        }
+        if (!res.contains("files") || !res["files"].is_array()) return json_str;
         std::stringstream ss;
         auto& files = res["files"];
         ss << "Itens no diretorio (" << files.size() << " itens):\n";
@@ -35,9 +33,7 @@ static std::string format_list_directory_compact(const std::string& json_str) {
             if (!is_dir) ss << " (" << size << " bytes)";
             ss << "\n";
         }
-        if (res.value("truncated", false)) {
-            ss << "... (lista truncada para " << files.size() << " itens)\n";
-        }
+        if (res.value("truncated", false)) ss << "... (lista truncada para " << files.size() << " itens)\n";
         return ss.str();
     } catch (...) {
         return json_str;
