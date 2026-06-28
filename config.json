@@ -3,7 +3,7 @@
   "custom_system_prompt": "Voce e um assistente de programacao util. Voce pode ler e modificar arquivos locais usando as ferramentas fornecidas. Sempre use a ferramenta modify_file se precisar editar um arquivo. Quando for ler pastas ou arquivos, informe os caminhos corretos. Sempre responda em Portugues.",
   "host": "127.0.0.1",
   "max_tokens": -1,
-  "model": "qwen/qwen3-14b",
+  "model": "qwen/qwen3-8b",
   "port": 1234,
   "pruning_threshold": 25000,
   "temperature": 0.699999988079071

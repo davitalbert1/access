@@ -103,36 +103,7 @@ ChatApp::~ChatApp() {
 void ChatApp::init() {
     apply_custom_theme();
     
-    // Add startup info message detailing functions and types
-    lm::Message startup_msg;
-    startup_msg.role = "system_info";
-    startup_msg.timestamp = "";
-    startup_msg.content = 
-        "=================== CAPACIDADES DO AGENTE C++ ===================\n"
-        "O modelo de IA conectado possui acesso a estas funcoes locais:\n\n"
-        "1. list_directory\n"
-        "   - Descricao: Lista recursiva ou nao de arquivos e pastas no caminho.\n"
-        "   - Parametros:\n"
-        "     * path (string, obrigatorio): Caminho absoluto ou relativo.\n"
-        "     * recursive (boolean, opcional, padrao=true): Listar recursivo.\n\n"
-        "2. read_file\n"
-        "   - Descricao: Le o conteudo completo do arquivo especificado.\n"
-        "   - Parametros:\n"
-        "     * path (string, obrigatorio): Caminho do arquivo.\n\n"
-        "3. search_files\n"
-        "4. get_file_info\n"
-        "5. modify_file\n"
-        "   - Descricao: Modifica trecho especifico por substitucao exata de bloco.\n"
-        "     Se o arquivo nao existir e 'target_content' for vazio, cria um novo arquivo.\n"
-        "   - Parametros:\n"
-        "     * path (string, obrigatorio): Caminho do arquivo.\n"
-        "     * target_content (string, obrigatorio): Texto exato a substituir.\n"
-        "     * replacement_content (string, obrigatorio): Novo texto substituto.\n\n"
-        "===============================================================\n"
-        "Certifique-se de iniciar o 'Local Server' do LM Studio antes de enviar mensagens.\n"
-        "Para testar, envie no chat: 'Verifique quais arquivos existem nesta pasta'";
-        
-    client.add_message(startup_msg);
+    // Start lightweight: tool schema is sent by LM Studio API automatically
     check_server_connection();
 }
 
@@ -411,15 +382,19 @@ void ChatApp::render_left_panel() {
         }
     }
     
-    if (scroll_to_bottom) {
+    if (scroll_to_bottom.exchange(false, std::memory_order_acq_rel)) {
         ImGui::SetScrollHereY(1.0f);
-        scroll_to_bottom = false;
     }
     ImGui::EndChild();
     
     // Bottom generation status
-    if (is_generating) {
-        ImGui::TextColored(ImVec4(0.6f, 0.6f, 1.0f, 1.0f), "IA: %s", current_status.c_str());
+    if (is_generating.load(std::memory_order_acquire)) {
+        std::string status_copy;
+        {
+            std::lock_guard<std::mutex> lock(status_mutex);
+            status_copy = current_status;
+        }
+        ImGui::TextColored(ImVec4(0.6f, 0.6f, 1.0f, 1.0f), "IA: %s", status_copy.c_str());
     } else {
         ImGui::Text(""); // Spacing
     }
@@ -480,13 +455,16 @@ void ChatApp::render_left_panel() {
     }
 
     // ENVIO DA MENSAGEM
-    if ((enter_pressed || send_clicked) && !is_generating && std::strlen(input_buf) > 0) {
+    if ((enter_pressed || send_clicked) && !is_generating.load(std::memory_order_acquire) && std::strlen(input_buf) > 0) {
         std::string prompt(input_buf);
         std::strcpy(input_buf, "");
 
-        is_generating = true;
-        current_status = "Iniciando requisicao...";
-        scroll_to_bottom = true;
+        is_generating.store(true, std::memory_order_release);
+        {
+            std::lock_guard<std::mutex> lock(status_mutex);
+            current_status = "Iniciando requisicao...";
+        }
+        scroll_to_bottom.store(true, std::memory_order_release);
 
         client.set_custom_system_prompt(system_prompt_buf);
 
@@ -501,10 +479,10 @@ void ChatApp::render_left_panel() {
 
         client.send_message(
             prompt,
-            [this](const std::string& status) {current_status = status;},
+            [this](const std::string& status) {std::lock_guard<std::mutex> lock(status_mutex); current_status = status;},
             [this](bool success, const std::string& final_text) {
-                is_generating = false;
-                scroll_to_bottom = true;
+                is_generating.store(false, std::memory_order_release);
+                scroll_to_bottom.store(true, std::memory_order_release);
 
                 if (!success) {
                     lm::Message err_msg;
@@ -532,6 +510,23 @@ void ChatApp::render_right_panel() {
                 std::strcpy(browser_path_buf, fs::current_path().generic_string().c_str());
             }
             
+            // Sorting controls
+            if (ImGui::SmallButton(browser_sort_ascending ? "Nome ^" : "Nome v")) {
+                browser_sort_column = 0;
+                browser_sort_ascending = !browser_sort_ascending;
+            }
+            ImGui::SameLine();
+            if (ImGui::SmallButton(browser_sort_ascending ? "Tamanho ^" : "Tamanho v")) {
+                browser_sort_column = 1;
+                browser_sort_ascending = !browser_sort_ascending;
+            }
+            ImGui::SameLine();
+            if (ImGui::SmallButton(browser_sort_ascending ? "Modificado ^" : "Modificado v")) {
+                browser_sort_column = 2;
+                browser_sort_ascending = !browser_sort_ascending;
+            }
+            ImGui::SameLine();
+
             // File search filter input
             ImGui::InputText("Filtrar arquivos", file_filter_buf, sizeof(file_filter_buf));
             
@@ -548,6 +543,25 @@ void ChatApp::render_right_panel() {
             std::string list_json = tools::list_directory(browser_path_buf, false);
             try {
                 json res = json::parse(list_json);
+                
+                if (res.contains("files") && res["files"].is_array()) {
+                    auto& files = res["files"];
+                    std::sort(files.begin(), files.end(), [&](const json& a, const json& b) {
+                        bool a_dir = a.value("d", false);
+                        bool b_dir = b.value("d", false);
+                        if (a_dir != b_dir) return a_dir > b_dir;
+                        
+                        bool cmp = false;
+                        if (browser_sort_column == 0) {
+                            cmp = a.value("name", "").compare(b.value("name", "")) < 0;
+                        } else if (browser_sort_column == 1) {
+                            cmp = a.value("s", 0) < b.value("s", 0);
+                        } else if (browser_sort_column == 2) {
+                            cmp = a.value("m", "").compare(b.value("m", "")) < 0;
+                        }
+                        return browser_sort_ascending ? cmp : !cmp;
+                    });
+                }
                 if (res.contains("error") || res.contains("e")) {
                     std::string error_msg = res.contains("error") ? res["error"].get<std::string>() : res["e"].get<std::string>();
                     ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "%s", error_msg.c_str());
@@ -567,63 +581,49 @@ void ChatApp::render_right_panel() {
                             }
                         }
                         
+                        ImGui::BeginTable("file_browser", 3, ImGuiTableFlags_Borders | ImGuiTableFlags_Resizable | ImGuiTableFlags_ScrollY);
                         ImGui::BeginChild("FileBrowserList", ImVec2(0, 0), true);
                         if (files.empty()) {
                             ImGui::TextDisabled("Nenhum item encontrado nesta pasta.");
                         }
+                        // Table header (rendered once per frame)
+                        static bool header_drawn = false;
+                        if (!header_drawn) {
+                            ImGui::TableSetupColumn("Nome", ImGuiTableColumnFlags_WidthStretch);
+                            ImGui::TableSetupColumn("Tamanho", ImGuiTableColumnFlags_WidthFixed, 90.0f);
+                            ImGui::TableSetupColumn("Modificação", ImGuiTableColumnFlags_WidthFixed, 130.0f);
+                            ImGui::TableHeadersRow();
+                            header_drawn = true;
+                        }
+
                         for (const auto& file : files) {
                             std::string name = file.value("name", file.value("p", std::string("")));
                             std::string path = file.value("path", file.value("p", std::string("")));
                             bool is_dir = file.value("is_directory", file.value("d", false));
-                            size_t size = file.value("size", file.value("s", 0));
+                            uint64_t size = file.value("s", 0);
+                            std::string mtime = file.value("m", "");
 
-                            if (!path.empty()) {
-                                fs::path candidate(path);
-                                if (!candidate.is_absolute()) {
-                                    fs::path current_dir(browser_path_buf);
-                                    candidate = current_dir / candidate;
-                                }
-                                path = candidate.lexically_normal().generic_string();
-                            }
-                            
                             // Check if file name matches the filter (case-insensitive)
                             if (std::strlen(file_filter_buf) > 0) {
                                 std::string filter_str(file_filter_buf);
                                 std::string name_lower = name;
                                 std::transform(name_lower.begin(), name_lower.end(), name_lower.begin(), ::tolower);
-                                std::transform(filter_str.begin(), filter_str.end(), filter_str.begin(), ::tolower);
                                 if (name_lower.find(filter_str) == std::string::npos) continue;
                             }
-                            
-                            std::string icon = is_dir ? "[DIR] " : "[FILE] ";
-                            std::string label = icon + name;
-                            
+
+                            ImGui::TableNextRow();
+                            ImGui::TableSetColumnIndex(0);
                             if (is_dir) {
-                                if (ImGui::Selectable(label.c_str(), false, ImGuiSelectableFlags_AllowDoubleClick)) {
-                                    if (ImGui::IsMouseDoubleClicked(0)) std::strcpy(browser_path_buf, path.c_str());
-                                }
+                                ImGui::TextColored(ImVec4(0.9f, 0.8f, 0.4f, 1.0f), "%s", name.c_str());
                             } else {
-                                if (ImGui::Selectable(label.c_str())) {
-                                    selected_file_path = path;
-                                    std::string read_json = tools::read_file(path);
-                                    try {
-                                        json read_res = json::parse(read_json);
-                                        if (read_res.contains("c")) {
-                                            selected_file_content = read_res["c"].get<std::string>();
-                                        } else if (read_res.contains("content")) {
-                                            selected_file_content = read_res["content"].get<std::string>();
-                                        } else {
-                                            selected_file_content = read_json;
-                                        }
-                                    } catch (...) {
-                                        selected_file_content = read_json;
-                                    }
-                                    show_file_content_popup = true;
-                                }
-                                ImGui::SameLine(ImGui::GetWindowWidth() - 100);
-                                ImGui::TextDisabled("%s", format_size(size).c_str());
+                                ImGui::Text("%s", name.c_str());
                             }
+                            ImGui::TableSetColumnIndex(1);
+                            ImGui::Text("%s", format_size(size).c_str());
+                            ImGui::TableSetColumnIndex(2);
+                            ImGui::Text("%s", mtime.c_str());
                         }
+                        ImGui::EndTable();
                         ImGui::EndChild();
                     }
                 }
