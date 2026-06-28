@@ -10,6 +10,7 @@
 #include <chrono>
 #include <sstream>
 #include <iomanip>
+#include <cctype>
 
 namespace fs = std::filesystem;
 using json = nlohmann::json;
@@ -118,7 +119,9 @@ void ChatApp::init() {
         "   - Descricao: Le o conteudo completo do arquivo especificado.\n"
         "   - Parametros:\n"
         "     * path (string, obrigatorio): Caminho do arquivo.\n\n"
-        "3. modify_file\n"
+        "3. search_files\n"
+        "4. get_file_info\n"
+        "5. modify_file\n"
         "   - Descricao: Modifica trecho especifico por substitucao exata de bloco.\n"
         "     Se o arquivo nao existir e 'target_content' for vazio, cria um novo arquivo.\n"
         "   - Parametros:\n"
@@ -422,20 +425,51 @@ void ChatApp::render_left_panel() {
     }
     
     // Message Input bar
-    ImGui::PushItemWidth(-160.0f);
-    bool enter_pressed = ImGui::InputText("##ChatInput", input_buf, sizeof(input_buf), ImGuiInputTextFlags_EnterReturnsTrue);
-    ImGui::PopItemWidth();
+    // Message Input bar (MAIOR + Ctrl+Enter newline + Enter send)
+    ImVec2 input_size = ImVec2(-160.0f, 140.0f);
+
+    // Input maior e multiline
+    ImGui::InputTextMultiline(
+        "##ChatInput",
+        input_buf,
+        sizeof(input_buf),
+        input_size,
+        ImGuiInputTextFlags_AllowTabInput
+    );
+
+    // Detecta interação no campo
+    bool is_active = ImGui::IsItemActive();
+    bool enter_pressed = false;
+    bool ctrl_pressed = ImGui::GetIO().KeyCtrl;
+
+    // CTRL + ENTER => quebra linha manual
+    if (is_active && ImGui::IsKeyPressed(ImGuiKey_Enter) && ctrl_pressed) {
+        size_t len = std::strlen(input_buf);
+        if (len + 1 < sizeof(input_buf)) {
+            input_buf[len] = '\n';
+            input_buf[len + 1] = '\0';
+        }
+    }
+
+    // ENTER simples => enviar mensagem
+    if (is_active && ImGui::IsKeyPressed(ImGuiKey_Enter) && !ctrl_pressed) enter_pressed = true;
+
     ImGui::SameLine();
-    
+
+    // Botão enviar
     bool send_clicked = ImGui::Button("Enviar", ImVec2(70, 0));
+
     ImGui::SameLine();
-    
+
+    // Botão limpar chat
     ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.45f, 0.15f, 0.15f, 1.0f));
     ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.6f, 0.2f, 0.2f, 1.0f));
     ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.35f, 0.1f, 0.1f, 1.0f));
+
     bool clear_clicked = ImGui::Button("Limpar Chat", ImVec2(80, 0));
+
     ImGui::PopStyleColor(3);
-    
+
     if (clear_clicked) {
         client.clear_history();
         lm::Message clear_msg;
@@ -444,32 +478,34 @@ void ChatApp::render_left_panel() {
         clear_msg.content = "Historico de conversa limpo.";
         client.add_message(clear_msg);
     }
-    
+
+    // ENVIO DA MENSAGEM
     if ((enter_pressed || send_clicked) && !is_generating && std::strlen(input_buf) > 0) {
         std::string prompt(input_buf);
         std::strcpy(input_buf, "");
-        
+
         is_generating = true;
         current_status = "Iniciando requisicao...";
         scroll_to_bottom = true;
-        
-        // Update custom system prompt in client
+
         client.set_custom_system_prompt(system_prompt_buf);
-        
-        // Dynamically set system prompt with current directory path appended
+
         std::string browser_path(browser_path_buf);
-        std::string system_prompt = client.get_custom_system_prompt() + 
-            "\nO diretorio de trabalho atual (aberto no visualizador de arquivos) e: " + browser_path + ". "
-            "Use este diretorio como base para as operacoes de arquivos e pastas.";
+        std::string system_prompt =
+            client.get_custom_system_prompt() +
+            "\nO diretorio de trabalho atual (aberto no visualizador de arquivos) e: " +
+            browser_path +
+            ". Use este diretorio como base para operacoes de arquivos.";
+
         client.set_system_prompt(system_prompt);
-        
-        client.send_message(prompt, 
-            [this](const std::string& status) {
-                current_status = status;
-            },
+
+        client.send_message(
+            prompt,
+            [this](const std::string& status) {current_status = status;},
             [this](bool success, const std::string& final_text) {
                 is_generating = false;
                 scroll_to_bottom = true;
+
                 if (!success) {
                     lm::Message err_msg;
                     err_msg.role = "system_info";
@@ -487,64 +523,109 @@ void ChatApp::render_right_panel() {
         // Tab 1: File Browser
         if (ImGui::BeginTabItem("Explorador de Arquivos")) {
             ImGui::InputText("Caminho Root", browser_path_buf, sizeof(browser_path_buf));
+            ImGui::SameLine();
+            if (ImGui::Button("Atualizar")) {
+                // refresh is implicit on next render
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Raiz")) {
+                std::strcpy(browser_path_buf, fs::current_path().generic_string().c_str());
+            }
             
             // File search filter input
             ImGui::InputText("Filtrar arquivos", file_filter_buf, sizeof(file_filter_buf));
+            
+            if (ImGui::Button("Resumo do projeto")) {
+                std::strcpy(input_buf, "Faça um resumo rápido da estrutura atual do projeto e liste os arquivos mais importantes.");
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Buscar arquivos")) {
+                std::strcpy(input_buf, "Use search_files para localizar arquivos relevantes neste diretório e me diga os resultados.");
+            }
             
             ImGui::Separator();
             
             std::string list_json = tools::list_directory(browser_path_buf, false);
             try {
                 json res = json::parse(list_json);
-                if (res.contains("error")) {
-                    ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "%s", res["error"].get<std::string>().c_str());
+                if (res.contains("error") || res.contains("e")) {
+                    std::string error_msg = res.contains("error") ? res["error"].get<std::string>() : res["e"].get<std::string>();
+                    ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "%s", error_msg.c_str());
                 } else {
-                    auto& files = res["files"];
-                    
-                    // Directory Up button
-                    if (ImGui::Button(".. [Voltar Pasta]")) {
-                        fs::path current(browser_path_buf);
-                        if (current.has_parent_path()) {
-                            std::strcpy(browser_path_buf, current.parent_path().generic_string().c_str());
+                    auto files_it = res.find("files");
+                    if (files_it == res.end()) files_it = res.find("f");
+                    if (files_it == res.end() || !files_it->is_array()) {
+                        ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "Resposta inesperada do explorador.");
+                    } else {
+                        const auto& files = *files_it;
+                        
+                        // Directory Up button
+                        if (ImGui::Button(".. [Voltar Pasta]")) {
+                            fs::path current(browser_path_buf);
+                            if (current.has_parent_path()) {
+                                std::strcpy(browser_path_buf, current.parent_path().generic_string().c_str());
+                            }
                         }
+                        
+                        ImGui::BeginChild("FileBrowserList", ImVec2(0, 0), true);
+                        if (files.empty()) {
+                            ImGui::TextDisabled("Nenhum item encontrado nesta pasta.");
+                        }
+                        for (const auto& file : files) {
+                            std::string name = file.value("name", file.value("p", std::string("")));
+                            std::string path = file.value("path", file.value("p", std::string("")));
+                            bool is_dir = file.value("is_directory", file.value("d", false));
+                            size_t size = file.value("size", file.value("s", 0));
+
+                            if (!path.empty()) {
+                                fs::path candidate(path);
+                                if (!candidate.is_absolute()) {
+                                    fs::path current_dir(browser_path_buf);
+                                    candidate = current_dir / candidate;
+                                }
+                                path = candidate.lexically_normal().generic_string();
+                            }
+                            
+                            // Check if file name matches the filter (case-insensitive)
+                            if (std::strlen(file_filter_buf) > 0) {
+                                std::string filter_str(file_filter_buf);
+                                std::string name_lower = name;
+                                std::transform(name_lower.begin(), name_lower.end(), name_lower.begin(), ::tolower);
+                                std::transform(filter_str.begin(), filter_str.end(), filter_str.begin(), ::tolower);
+                                if (name_lower.find(filter_str) == std::string::npos) continue;
+                            }
+                            
+                            std::string icon = is_dir ? "[DIR] " : "[FILE] ";
+                            std::string label = icon + name;
+                            
+                            if (is_dir) {
+                                if (ImGui::Selectable(label.c_str(), false, ImGuiSelectableFlags_AllowDoubleClick)) {
+                                    if (ImGui::IsMouseDoubleClicked(0)) std::strcpy(browser_path_buf, path.c_str());
+                                }
+                            } else {
+                                if (ImGui::Selectable(label.c_str())) {
+                                    selected_file_path = path;
+                                    std::string read_json = tools::read_file(path);
+                                    try {
+                                        json read_res = json::parse(read_json);
+                                        if (read_res.contains("c")) {
+                                            selected_file_content = read_res["c"].get<std::string>();
+                                        } else if (read_res.contains("content")) {
+                                            selected_file_content = read_res["content"].get<std::string>();
+                                        } else {
+                                            selected_file_content = read_json;
+                                        }
+                                    } catch (...) {
+                                        selected_file_content = read_json;
+                                    }
+                                    show_file_content_popup = true;
+                                }
+                                ImGui::SameLine(ImGui::GetWindowWidth() - 100);
+                                ImGui::TextDisabled("%s", format_size(size).c_str());
+                            }
+                        }
+                        ImGui::EndChild();
                     }
-                    
-                    ImGui::BeginChild("FileBrowserList", ImVec2(0, 0), true);
-                    for (const auto& file : files) {
-                        std::string name = file["name"].get<std::string>();
-                        std::string path = file["path"].get<std::string>();
-                        bool is_dir = file["is_directory"].get<bool>();
-                        size_t size = file["size"].get<size_t>();
-                        
-                        // Check if file name matches the filter (case-insensitive)
-                        if (std::strlen(file_filter_buf) > 0) {
-                            std::string filter_str(file_filter_buf);
-                            std::string name_lower = name;
-                            std::transform(name_lower.begin(), name_lower.end(), name_lower.begin(), ::tolower);
-                            std::transform(filter_str.begin(), filter_str.end(), filter_str.begin(), ::tolower);
-                            if (name_lower.find(filter_str) == std::string::npos) {
-                                continue;
-                            }
-                        }
-                        
-                        std::string icon = is_dir ? "[DIR] " : "[FILE] ";
-                        std::string label = icon + name;
-                        
-                        if (is_dir) {
-                            if (ImGui::Selectable(label.c_str(), false, ImGuiSelectableFlags_AllowDoubleClick)) {
-                                if (ImGui::IsMouseDoubleClicked(0)) std::strcpy(browser_path_buf, path.c_str());
-                            }
-                        } else {
-                            if (ImGui::Selectable(label.c_str())) {
-                                selected_file_path = path;
-                                selected_file_content = tools::read_file(path);
-                                show_file_content_popup = true;
-                            }
-                            ImGui::SameLine(ImGui::GetWindowWidth() - 100);
-                            ImGui::TextDisabled("%s", format_size(size).c_str());
-                        }
-                    }
-                    ImGui::EndChild();
                 }
             } catch (const std::exception& e) {
                 ImGui::Text("Falha ao analisar diretorio: %s", e.what());

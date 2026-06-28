@@ -6,34 +6,115 @@
 #include <sstream>
 #include <iomanip>
 #include <iostream>
+#include <fstream>
+#include <mutex>
 #include <atomic>
+#include <algorithm>
+#include <cctype>
+
+static std::mutex log_file_mutex;
+
+static void log_tool_call(const std::string& func_name, const std::string& args_str, const std::string& result) {
+    std::lock_guard<std::mutex> lock(log_file_mutex);
+    static std::ofstream log_file("tool_calls.log", std::ios::app);
+    if (!log_file.is_open()) return;
+
+    auto now = std::chrono::system_clock::now();
+    auto time = std::chrono::system_clock::to_time_t(now);
+    std::stringstream ts;
+    ts << std::put_time(std::localtime(&time), "%Y-%m-%d %H:%M:%S");
+
+    log_file << "[" << ts.str() << "] TOOL CALL | func=" << func_name
+             << " | args=" << args_str
+             << " | result=" << result << std::endl;
+    log_file.flush();
+}
 
 static std::atomic<int> global_msg_id_counter{1};
 
 using json = nlohmann::json;
 
 namespace lm {
+static bool prompt_requires_tool_use(const std::string& prompt) {
+    std::string lower = prompt;
+    std::transform(lower.begin(), lower.end(), lower.begin(), [](unsigned char c) {
+        return static_cast<char>(std::tolower(c));
+    });
+
+    static const char* markers[] = {
+        "arquivo", "arquivos", "pasta", "pastas", "diretório", "diretórios", "caminho", "caminhos",
+        "codigo", "código", "projeto", "projetos", "ler", "listar", "mostrar", "editar",
+        "modificar", "criar", "explorar", "conteudo", "conteúdo", "file", "files", "folder",
+        "folders", "directory", "directories", "path", "paths", "code", "project", "src", "include"
+    };
+
+    for (const char* marker : markers) {
+        if (lower.find(marker) != std::string::npos) {
+            return true;
+        }
+    }
+    return false;
+}
 
 static std::string format_list_directory_compact(const std::string& json_str) {
     try {
         json res = json::parse(json_str);
-        if (res.contains("error")) {
-            return "Erro ao listar diretorio: " + res["error"].get<std::string>();
-        }
+
+        if (res.contains("error")) return "erro: " + res["error"].get<std::string>();
         if (!res.contains("files") || !res["files"].is_array()) return json_str;
+
+        const auto& files = res["files"];
+
         std::stringstream ss;
-        auto& files = res["files"];
-        ss << "Itens no diretorio (" << files.size() << " itens):\n";
+
+        // Cabeçalho ultra curto
+        ss << "dir(" << files.size() << "):\n";
+
         for (const auto& file : files) {
             std::string path = file.value("path", "");
             bool is_dir = file.value("is_directory", false);
-            size_t size = file.value("size", 0);
-            
-            ss << "- " << (is_dir ? "[DIR]" : "[FILE]") << " " << path;
-            if (!is_dir) ss << " (" << size << " bytes)";
+
+            ss << (is_dir ? "d " : "f ") << path;
+
+            // tamanho só se arquivo
+            if (!is_dir) ss << " " << file.value("size", 0);
+
             ss << "\n";
         }
-        if (res.value("truncated", false)) ss << "... (lista truncada para " << files.size() << " itens)\n";
+
+        if (res.value("truncated", false)) ss << "...trunc\n";
+
+        return ss.str();
+
+    } catch (...) {
+        return json_str;
+    }
+}
+
+static std::string format_search_results_compact(const std::string& json_str) {
+    try {
+        json res = json::parse(json_str);
+        if (res.contains("error")) return "erro: " + res["error"].get<std::string>();
+        if (!res.contains("matches") || !res["matches"].is_array()) return json_str;
+
+        std::stringstream ss;
+        ss << "search(" << res.value("count", 0) << "):\n";
+        for (const auto& item : res["matches"]) {
+            ss << (item.value("is_directory", false) ? "d " : "f ") << item.value("path", "") << "\n";
+        }
+        return ss.str();
+    } catch (...) {
+        return json_str;
+    }
+}
+
+static std::string format_file_info_compact(const std::string& json_str) {
+    try {
+        json res = json::parse(json_str);
+        if (res.contains("error")) return "erro: " + res["error"].get<std::string>();
+        if (!res.value("exists", false)) return "nao existe";
+        std::stringstream ss;
+        ss << res.value("name", "") << " | " << (res.value("is_directory", false) ? "dir" : "file") << " | " << res.value("size", 0);
         return ss.str();
     } catch (...) {
         return json_str;
@@ -65,12 +146,28 @@ LMClient::LMClient() {
     }
     
     // Set a default system prompt
-    custom_system_prompt = "Voce e um assistente de programacao util. "
-                           "Voce pode ler e modificar arquivos locais usando as ferramentas fornecidas. "
-                           "Sempre use a ferramenta modify_file se precisar editar um arquivo. "
-                           "Quando for ler pastas ou arquivos, informe os caminhos corretos. "
-                           "Sempre responda em Portugues."
-                           "Caso seja necessário o uso de informações de diretórios e arquivos, use as ferramentas disponíveis para acessar estes itens.";
+    custom_system_prompt =
+    "Você é um assistente de programação altamente confiável, com comportamento estilo Antigravity: primeiro inspecione o ambiente local, depois execute a ação mínima necessária e só então responda.\n\n"
+
+    "REGRAS FUNDAMENTAIS (OBRIGATÓRIAS):\n"
+    "1. Nunca invente conteúdo de arquivos, diretórios ou sistema local.\n"
+    "2. Se a tarefa envolver arquivos, pastas, código, projeto ou caminhos, use ferramentas imediatamente.\n"
+    "3. Nunca responda com suposições como 'provavelmente' ou 'acho que'.\n"
+    "4. Sempre que houver dados reais do sistema, use ferramentas antes de responder.\n\n"
+
+    "USO OBRIGATÓRIO DE FERRAMENTAS:\n"
+    "- Para listar diretórios ou arquivos: use 'list_directory'\n"
+    "- Para ler conteúdo de arquivos: use 'read_file'\n"
+    "- Para pesquisar arquivos: use 'search_files'\n"
+    "- Para obter metadados de um arquivo: use 'get_file_info'\n"
+    "- Para modificar arquivos: use 'modify_file'\n"
+    "- Prefira a ferramenta mais barata e direta que resolva a necessidade.\n\n"
+
+    "COMPORTAMENTO:\n"
+    "- Se a tarefa pedir dados locais, chame pelo menos uma ferramenta antes de responder.\n"
+    "- Quando houver uma ferramenta para obter a informação, não responda diretamente.\n"
+    "- Use os resultados das ferramentas como fonte primária de verdade.\n"
+    "- Responda em português.\n";
     set_system_prompt(custom_system_prompt);
 }
 
@@ -169,9 +266,7 @@ bool LMClient::check_connection(std::string& err_out) {
             if (res.contains("data") && res["data"].is_array() && !res["data"].empty()) {
                 // Autodetect model from server if currently set to "default" or empty
                 std::string first_model = res["data"][0]["id"].get<std::string>();
-                if (model == "default" || model.empty()) {
-                    model = first_model;
-                }
+                if (model == "default" || model.empty()) model = first_model;
             }
             return true;
         } catch (...) {
@@ -183,209 +278,233 @@ bool LMClient::check_connection(std::string& err_out) {
 }
 
 void LMClient::send_message(const std::string& user_prompt,
-                            std::function<void(const std::string& status)> on_status_change,
-                            std::function<void(bool success, const std::string& final_text)> on_complete) {
+    std::function<void(const std::string& status)> on_status_change,
+    std::function<void(bool success, const std::string& final_text)> on_complete) {
     std::string turn_id = "msg_" + std::to_string(global_msg_id_counter++);
+
     std::thread([this, user_prompt, turn_id, on_status_change, on_complete]() {
         tools::current_tool_message_id = turn_id;
-        // Add User message
+
+        // Add user message
         {
             std::lock_guard<std::mutex> lock(history_mutex);
-            history.push_back({ "user", user_prompt, "", "", nullptr, get_current_timestamp(), turn_id });
+            history.push_back({"user", user_prompt, "", "", nullptr, get_current_timestamp(), turn_id});
         }
-        
+
         on_status_change("Enviando prompt ao modelo...");
-        
+
         bool loop = true;
-        std::string final_content = "";
-        std::string err_out = "";
-        
+        std::string final_content;
+        std::string err_out;
+        bool force_tool_use = prompt_requires_tool_use(user_prompt);
+
+        // Cache estático de tools (evita rebuild a cada request)
+        static json cached_tools = nullptr;
+
         while (loop) {
-            // Build request json
             json req = json::object();
+
             {
                 std::lock_guard<std::mutex> lock(history_mutex);
+
                 json messages = json::array();
-                
-                // Calculate total size of the message history to check if pruning is needed
-                size_t total_chars = 0;
-                size_t sent_chars = 0;
-                for (const auto& msg : history) {
-                    if (msg.role == "system_info") continue;
-                    total_chars += msg.content.length();
+
+                if (force_tool_use) {
+                    json forced_system;
+                    forced_system["role"] = "system";
+                    forced_system["content"] = "Modo obrigatório: esta solicitação precisa de dados reais do sistema. Chame pelo menos uma ferramenta antes de responder e use o resultado como fonte de verdade.";
+                    messages.push_back(forced_system);
                 }
-                
-                bool need_pruning = (total_chars > pruning_threshold);
-                
+
+                size_t total_chars = 0;
                 for (const auto& msg : history) {
-                    // Skip internal UI-only messages
+                    if (msg.role != "system_info") total_chars += msg.content.size();
+                }
+
+                bool need_pruning = total_chars > pruning_threshold;
+
+                for (const auto& msg : history) {
                     if (msg.role == "system_info") continue;
-                    
-                    json m = { {"role", msg.role} };
-                    
-                    std::string content_to_send = msg.content;
-                    
-                    // 1. Always format list_directory responses compactly to save tokens
+
+                    json m;
+                    m["role"] = msg.role;
+
+                    std::string content = msg.content;
+
+                    // Compacta saídas de ferramentas para economizar tokens
                     if (msg.role == "tool" && msg.name == "list_directory") {
-                        content_to_send = format_list_directory_compact(msg.content);
+                        content = format_list_directory_compact(content);
+                    } else if (msg.role == "tool" && msg.name == "search_files") {
+                        content = format_search_results_compact(content);
+                    } else if (msg.role == "tool" && msg.name == "get_file_info") {
+                        content = format_file_info_compact(content);
                     }
-                    
-                    // 2. Prune/truncate large old tool responses if history exceeds the threshold
-                    if (need_pruning && msg.role == "tool" && msg.msg_id != turn_id && !msg.msg_id.empty()) {
-                        if (content_to_send.length() > 500) {
-                            content_to_send = "[Conteudo da ferramenta '" + msg.name + "' ocultado (" + 
-                                              std::to_string(content_to_send.length()) + 
-                                              " caracteres) para economizar tokens. Chame a ferramenta novamente se precisar.]";
-                        }
+
+                    // Pruning agressivo de tool outputs antigos
+                    if (need_pruning && msg.role == "tool" && msg.msg_id != turn_id && content.size() > 600) {
+                        content = "[tool output omitido para economizar tokens: " + msg.name + "]";
                     }
-                    
-                    if (!content_to_send.empty()) {
-                        m["content"] = content_to_send;
-                    } else if (msg.role == "assistant" && !msg.tool_calls.is_null()) {
-                        m["content"] = nullptr; // OpenAI spec requires content to be null or empty string when tool_calls exist
-                    } else {
-                        m["content"] = "";
-                    }
-                    
-                    if (!msg.name.empty()) m["name"] = msg.name;
-                    if (!msg.tool_call_id.empty()) m["tool_call_id"] = msg.tool_call_id;
-                    if (!msg.tool_calls.is_null()) m["tool_calls"] = msg.tool_calls;
-                    
-                    // Track size of what is actually sent
-                    sent_chars += content_to_send.length();
-                    
+
+                    // IMPORTANTE: nunca enviar vazio
+                    if (!content.empty()) m["content"] = content;
+
+                    // NÃO enviar metadata desnecessária
+                    if (msg.role == "tool" && !msg.tool_call_id.empty()) m["tool_call_id"] = msg.tool_call_id;
+
+                    // tool_calls só no assistant
+                    if (msg.role == "assistant" && !msg.tool_calls.is_null()) m["tool_calls"] = msg.tool_calls;
+
                     messages.push_back(m);
                 }
-                
-                last_request_total_chars = total_chars;
-                last_request_sent_chars = sent_chars;
-                
+
                 req["messages"] = messages;
             }
+
             req["model"] = model;
             req["temperature"] = temperature;
             if (max_tokens > 0) req["max_tokens"] = max_tokens;
-            
-            // Define tools
-            json tools_array = json::array();
-            // list_directory
-            tools_array.push_back({
-                {"type", "function"},
-                {"function", {
-                    {"name", "list_directory"},
-                    {"description", "Lista arquivos e pastas em um caminho informado de forma recursiva ou nao. Retorna uma listagem de texto compacta com informacoes de tipo, caminho e tamanho."},
-                    {"parameters", {
-                        {"type", "object"},
-                        {"properties", {
-                            {"path", {{"type", "string"}, {"description", "Caminho absoluto ou relativo do diretorio a ser listado."}}},
-                            {"recursive", {{"type", "boolean"}, {"description", "Se deve listar recursivamente (padrao e true)."}}}
-                        }},
-                        {"required", json::array({"path"})}
+
+            if (cached_tools.is_null()) {
+                cached_tools = json::array();
+
+                cached_tools.push_back({
+                    {"type", "function"},
+                    {"function", {
+                        {"name", "list_directory"},
+                        {"description", "Lista diretórios"},
+                        {"parameters", {
+                            {"type", "object"},
+                            {"properties", {
+                                {"path", {{"type", "string"}}},
+                                {"recursive", {{"type", "boolean"}}}
+                            }},
+                            {"required", json::array({"path"})}
+                        }}
                     }}
-                }}
-            });
-            // read_file
-            tools_array.push_back({
-                {"type", "function"},
-                {"function", {
-                    {"name", "read_file"},
-                    {"description", "Le o conteudo completo de um arquivo em especifico."},
-                    {"parameters", {
-                        {"type", "object"},
-                        {"properties", {
-                            {"path", {{"type", "string"}, {"description", "Caminho absoluto ou relativo do arquivo a ser lido."}}}
-                        }},
-                        {"required", json::array({"path"})}
+                });
+
+                cached_tools.push_back({
+                    {"type", "function"},
+                    {"function", {
+                        {"name", "read_file"},
+                        {"description", "Lê arquivo"},
+                        {"parameters", {
+                            {"type", "object"},
+                            {"properties", {{"path", {{"type", "string"}}}}},
+                            {"required", json::array({"path"})}
+                        }}
                     }}
-                }}
-            });
-            // modify_file
-            tools_array.push_back({
-                {"type", "function"},
-                {"function", {
-                    {"name", "modify_file"},
-                    {"description", "Modifica um arquivo substituindo um bloco de texto 'target_content' por 'replacement_content'. Se o arquivo nao existe e 'target_content' esta vazio, cria um novo arquivo."},
-                    {"parameters", {
-                        {"type", "object"},
-                        {"properties", {
-                            {"path", {{"type", "string"}, {"description", "Caminho do arquivo a ser modificado ou criado."}}},
-                            {"target_content", {{"type", "string"}, {"description", "O bloco exato de texto a ser substituido no arquivo. Deve ser unico. Deixe vazio somente se estiver criando um novo arquivo."}}},
-                            {"replacement_content", {{"type", "string"}, {"description", "O novo bloco de texto que substituira o anterior (ou o conteudo do novo arquivo)."}}}
-                        }},
-                        {"required", json::array({"path", "target_content", "replacement_content"})}
+                });
+
+                cached_tools.push_back({
+                    {"type", "function"},
+                    {"function", {
+                        {"name", "search_files"},
+                        {"description", "Pesquisa arquivos por nome"},
+                        {"parameters", {
+                            {"type", "object"},
+                            {"properties", {
+                                {"path", {{"type", "string"}}},
+                                {"pattern", {{"type", "string"}}},
+                                {"recursive", {{"type", "boolean"}}},
+                                {"max_results", {{"type", "integer"}}}
+                            }},
+                            {"required", json::array({"path"})}
+                        }}
                     }}
-                }}
-            });
-            
-            req["tools"] = tools_array;
-            req["tool_choice"] = "auto";
-            
+                });
+
+                cached_tools.push_back({
+                    {"type", "function"},
+                    {"function", {
+                        {"name", "get_file_info"},
+                        {"description", "Obtém metadados de um arquivo ou pasta"},
+                        {"parameters", {
+                            {"type", "object"},
+                            {"properties", {{"path", {{"type", "string"}}}}},
+                            {"required", json::array({"path"})}
+                        }}
+                    }}
+                });
+
+                cached_tools.push_back({
+                    {"type", "function"},
+                    {"function", {
+                        {"name", "modify_file"},
+                        {"description", "Modifica arquivo"},
+                        {"parameters", {
+                            {"type", "object"},
+                            {"properties", {
+                                {"path", {{"type", "string"}}},
+                                {"target_content", {{"type", "string"}}},
+                                {"replacement_content", {{"type", "string"}}}
+                            }},
+                            {"required", json::array({"path", "target_content", "replacement_content"})}
+                        }}
+                    }}
+                });
+            }
+
+            req["tools"] = cached_tools;
+            req["tool_choice"] = force_tool_use ? "required" : "auto";
+            req["parallel_tool_calls"] = false;
+
             std::string url = "http://" + host + ":" + std::to_string(port) + "/v1/chat/completions";
+
             std::string response;
-            
-            // Log for debugging (can be viewed in console)
-            std::cout << "[API POST Request] Sending message history to: " << url << std::endl;
-            
+
+            std::cout << "[API] POST " << url << std::endl;
+
             if (!make_post_request(url, req.dump(), response, err_out)) {
-                on_complete(false, "Falha na conexao ou tempo esgotado: " + err_out);
+                on_complete(false, "Falha na conexao: " + err_out);
                 return;
             }
-            
+
             try {
                 json res = json::parse(response);
+
                 if (res.contains("error")) {
-                    on_complete(false, "Erro do servidor LM Studio: " + res["error"]["message"].get<std::string>());
-                    return;
-                }
-                
-                if (!res.contains("choices") || res["choices"].empty()) {
-                    on_complete(false, "Resposta vazia ou invalida do servidor.\n" + response);
+                    on_complete(false, res["error"]["message"].get<std::string>());
                     return;
                 }
 
                 auto& choice = res["choices"][0];
-                auto& res_msg = choice["message"];
-                
-                std::string content = "";
-                if (res_msg.contains("content") && !res_msg["content"].is_null()) {
-                    content = res_msg["content"].get<std::string>();
-                }
-                
-                nlohmann::json tool_calls = nullptr;
-                if (res_msg.contains("tool_calls") && !res_msg["tool_calls"].is_null()) {
-                    tool_calls = res_msg["tool_calls"];
-                }
-                
-                // Add assistant response to history
+                auto& msg = choice["message"];
+
+                std::string content;
+                if (msg.contains("content") && !msg["content"].is_null()) content = msg["content"].get<std::string>();
+
+                json tool_calls = nullptr;
+                if (msg.contains("tool_calls") && !msg["tool_calls"].is_null()) tool_calls = msg["tool_calls"];
+
+                // salva assistant msg
                 {
                     std::lock_guard<std::mutex> lock(history_mutex);
-                    Message assistant_msg;
-                    assistant_msg.role = "assistant";
-                    assistant_msg.content = content;
-                    assistant_msg.tool_calls = tool_calls;
-                    assistant_msg.timestamp = get_current_timestamp();
-                    assistant_msg.msg_id = turn_id;
-                    history.push_back(assistant_msg);
+
+                    history.push_back({"assistant", content, "", "", tool_calls, get_current_timestamp(), turn_id});
                 }
-                
+
+                // TOOL LOOP
                 if (!tool_calls.is_null() && !tool_calls.empty()) {
-                    on_status_change("Executando chamadas de ferramenta do modelo...");
+                    on_status_change("Executando ferramentas...");
+
                     if (!run_tool_calls_loop(tool_calls, on_status_change, err_out)) {
-                        on_complete(false, "Erro ao processar as ferramentas: " + err_out);
+                        on_complete(false, err_out);
                         return;
                     }
-                    // Loop again with the tool response added to history
+
                 } else {
                     final_content = content;
-                    loop = false; // Finished!
+                    loop = false;
                 }
             } catch (const std::exception& e) {
-                on_complete(false, std::string("Erro no parse JSON: ") + e.what() + "\nResposta do servidor: " + response);
+                on_complete(false, std::string("Erro JSON: ") + e.what());
                 return;
             }
         }
-        
+
         on_complete(true, final_content);
+
     }).detach();
 }
 
@@ -396,10 +515,10 @@ bool LMClient::run_tool_calls_loop(const nlohmann::json& tool_calls,
         std::string call_id = call["id"].get<std::string>();
         std::string func_name = call["function"]["name"].get<std::string>();
         std::string args_str = call["function"]["arguments"].get<std::string>();
-        
+
         on_status_change("Executando: " + func_name + "()");
         std::cout << "[Tool Run] Executing function: " << func_name << " with arguments: " << args_str << std::endl;
-        
+
         std::string result = "";
         try {
             json args = json::parse(args_str);
@@ -410,6 +529,15 @@ bool LMClient::run_tool_calls_loop(const nlohmann::json& tool_calls,
             } else if (func_name == "read_file") {
                 std::string path = args["path"].get<std::string>();
                 result = tools::read_file(path);
+            } else if (func_name == "search_files") {
+                std::string path = args["path"].get<std::string>();
+                std::string pattern = args.value("pattern", "");
+                bool recursive = args.value("recursive", true);
+                int max_results = args.value("max_results", 100);
+                result = tools::search_files(path, pattern, recursive, max_results);
+            } else if (func_name == "get_file_info") {
+                std::string path = args["path"].get<std::string>();
+                result = tools::get_file_info(path);
             } else if (func_name == "modify_file") {
                 std::string path = args["path"].get<std::string>();
                 std::string target = args["target_content"].get<std::string>();
@@ -423,7 +551,9 @@ bool LMClient::run_tool_calls_loop(const nlohmann::json& tool_calls,
         } catch (const std::exception& e) {
             result = "Error parsing arguments: " + std::string(e.what());
         }
-        
+
+        log_tool_call(func_name, args_str, result);
+
         // Add tool response to history
         {
             std::lock_guard<std::mutex> lock(history_mutex);
@@ -475,6 +605,7 @@ void LMClient::set_system_prompt(const std::string& prompt) {
             return;
         }
     }
+
     // Insert at front
     Message sys;
     sys.role = "system";
