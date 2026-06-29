@@ -7,9 +7,15 @@
 #include <algorithm>
 #include <iterator>
 #include <nlohmann/json.hpp>
+#include <unordered_set>
 
 namespace fs = std::filesystem;
 using json = nlohmann::json;
+
+static const std::unordered_set<std::string> DEFAULT_EXCLUDED = {".git", ".vs", ".vscode",
+    ".idea", "node_modules", "bin", "obj"};
+
+int hidden_count = 0;
 
 namespace tools {
     thread_local std::string current_tool_message_id = "";
@@ -17,6 +23,19 @@ namespace tools {
     static std::vector<FileChange> history;
     static std::mutex history_mutex;
     static int global_change_counter = 1;
+
+    static std::vector<std::string> split_into_chunks(const std::string& text, size_t chunk_size) {
+        std::vector<std::string> chunks;
+        size_t pos = 0;
+
+        while (pos < text.size()) {
+            size_t len = std::min(chunk_size, text.size() - pos);
+            chunks.push_back(text.substr(pos, len));
+            pos += len;
+        }
+
+        return chunks;
+    }
 
     // Helper to get current timestamp
     static std::string get_current_timestamp() {
@@ -27,7 +46,9 @@ namespace tools {
         return ss.str();
     }
 
-    std::string list_directory(const std::string& path_str, bool recursive) {
+    std::string list_directory(const std::string& path_str, bool recursive, bool show_excluded) {
+        hidden_count = 0;
+
         try {
             fs::path p(path_str);
 
@@ -41,6 +62,12 @@ namespace tools {
             bool truncated = false;
 
             auto add_entry = [&](const fs::directory_entry& entry) {
+                std::string filename = entry.path().filename().generic_string();
+                if (!show_excluded && DEFAULT_EXCLUDED.find(filename) != DEFAULT_EXCLUDED.end()) {
+                    hidden_count++;
+                    return;
+                }
+
                 if (count >= MAX_FILES) {
                     truncated = true;
                     return;
@@ -49,9 +76,10 @@ namespace tools {
                 json item;
 
                 fs::path absolute_entry = fs::absolute(entry.path());
-                item["name"] = absolute_entry.filename().generic_string();
-                item["path"] = absolute_entry.generic_string();
-                item["p"] = fs::relative(entry.path(), p).generic_string();
+                item["n"] = absolute_entry.filename().generic_string();
+                item["p"] = absolute_entry.generic_string();
+                item["a"] = absolute_entry.generic_string();
+                item["p"] = fs::absolute(entry.path()).generic_string();
                 item["d"] = entry.is_directory();
                 if (!entry.is_directory()) item["s"] = entry.file_size();
 
@@ -86,12 +114,13 @@ namespace tools {
 
             json result;
 
-            result["f"] = files;
-            result["c"] = count;
+            result["files"] = files;
+            result["count"] = count;
+            result["hidden"] = hidden_count;
 
-            if (truncated) result["t"] = true;
+            if (truncated) result["truncated"] = true;
 
-            return result.dump();
+            return result.dump(-1, ' ', false);
         } catch (const std::exception& e) {
             return R"({"e":"ex"})";
         }
@@ -169,9 +198,9 @@ namespace tools {
                 if (!needle.empty() && lower_name.find(needle) == std::string::npos) continue;
 
                 json item;
-                item["name"] = name;
-                item["path"] = entry.path().generic_string();
-                item["is_directory"] = entry.is_directory();
+                item["n"] = name;
+                item["p"] = entry.path().generic_string();
+                item["d"] = entry.is_directory();
                 if (!entry.is_directory()) item["size"] = entry.file_size();
 
                 matches.push_back(item);
@@ -181,7 +210,7 @@ namespace tools {
             json result;
             result["matches"] = matches;
             result["count"] = count;
-            return result.dump();
+            return result.dump(-1, ' ', false);
         } catch (...) {
             return R"({"e":"ex"})";
         }
@@ -194,51 +223,60 @@ namespace tools {
 
             if (!fs::exists(p)) {
                 result["exists"] = false;
-                return result.dump();
+                return result.dump(-1, ' ', false);
             }
 
             result["exists"] = true;
-            result["name"] = p.filename().generic_string();
-            result["path"] = fs::absolute(p).generic_string();
+            result["n"] = p.filename().generic_string();
+            result["p"] = fs::absolute(p).generic_string();
             result["parent"] = p.parent_path().generic_string();
             result["is_directory"] = fs::is_directory(p);
             result["is_file"] = fs::is_regular_file(p);
             if (fs::is_regular_file(p)) result["size"] = fs::file_size(p);
 
-            return result.dump();
+            return result.dump(-1, ' ', false);
         } catch (...) {
             return R"({"e":"ex"})";
         }
     }
 
-    std::string read_file(const std::string& filepath_str) {
+    std::string read_file(const std::string& filepath_str, size_t chunk_size, size_t offset) {
         try {
             fs::path p(filepath_str);
 
             if (!fs::exists(p)) return R"({"e":"no_file"})";
             if (!fs::is_regular_file(p)) return R"({"e":"not_file"})";
 
-            std::ifstream in(p, std::ios::in | std::ios::binary);
+            std::ifstream in(p, std::ios::binary);
             if (!in.is_open()) return R"({"e":"open_fail"})";
 
-            const size_t PREVIEW_SIZE = 24 * 1024;
+            size_t file_size = fs::file_size(p);
+
+            if (offset >= file_size) {
+                json out;
+                out["c"] = "";
+                out["o"] = offset;
+                out["has_more"] = false;
+                return out.dump();
+            }
+
+            in.seekg(offset);
 
             std::string content;
+            content.resize(chunk_size);
 
-            content.resize(PREVIEW_SIZE);
-            in.read(content.data(), PREVIEW_SIZE);
+            in.read(content.data(), chunk_size);
 
             size_t read_bytes = in.gcount();
             content.resize(read_bytes);
 
-            std::string remaining;
-            bool truncated = false;
-
-            if (!in.eof()) truncated = true;
+            size_t next_offset = offset + read_bytes;
 
             json out;
             out["c"] = content;
-            if (truncated) out["t"] = true;
+            out["o"] = offset;
+            out["n"] = next_offset;
+            out["has_more"] = next_offset < file_size;
 
             return out.dump();
         } catch (...) {

@@ -13,6 +13,7 @@ namespace lm {
         std::string tool_call_id; // For tool results and matching tool calls
         nlohmann::json tool_calls; // Parsed tool calls from the assistant if any
         std::string timestamp;
+        std::string reasoning;
         std::string msg_id; // Unique message identifier
     };
 
@@ -25,9 +26,17 @@ namespace lm {
         void set_server(const std::string& host, int port);
         void set_model(const std::string& model_name);
         
-        std::string get_host() const { return host; }
-        int get_port() const { return port; }
-        std::string get_model() const { return model; }
+        std::string get_host() const {
+            return host;
+        }
+
+        int get_port() const {
+            return port;
+        }
+
+        std::string get_model() const {
+            return model;
+        }
 
         // Advanced Model & Optimization Parameters
         void set_temperature(float temp) { temperature = temp; }

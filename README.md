@@ -10,7 +10,7 @@ The visual design and interactions are inspired by the *Antigravity* style, prov
 
 * **Agentic Developer Assistant:** The local AI model can interact directly with your workspace files via built-in tools:
   * `list_directory`: Lists directory structures and files recursively or flat.
-  * `read_file`: Reads the full content of text files in your project.
+  * `read_file`: Reads files in chunks instead of loading full content at once, using chunk_size and offset for paginated access to large files.
   * `modify_file`: Performs precise, single-occurrence search-and-replace edits or file creation.
 * **Change History & Rollback:** Every file modification made by the assistant is logged in the side panel. You can inspect changes in a side-by-side diff window and revert any change with a single click.
 * **Integrated File Browser:** Browse project files and directories directly within the application and view their contents in real-time.

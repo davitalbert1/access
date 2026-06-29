@@ -11,8 +11,12 @@
 #include <atomic>
 #include <algorithm>
 #include <cctype>
+#include <regex>
+#include <string>
+#include <string_view>
 
 static std::mutex log_file_mutex;
+thread_local std::string reasoning_accum;
 
 static void log_tool_call(const std::string& func_name, const std::string& args_str, const std::string& result) {
     std::lock_guard<std::mutex> lock(log_file_mutex);
@@ -24,8 +28,7 @@ static void log_tool_call(const std::string& func_name, const std::string& args_
     std::stringstream ts;
     ts << std::put_time(std::localtime(&time), "%Y-%m-%d %H:%M:%S");
 
-    log_file << "[" << ts.str() << "] TOOL CALL | func=" << func_name
-             << " | args=" << args_str << " | result=" << result << std::endl;
+    log_file << "[" << ts.str() << "] TOOL CALL | func=" << func_name << " | args=" << args_str << " | result=" << result << std::endl;
     log_file.flush();
 }
 
@@ -34,23 +37,51 @@ static std::atomic<int> global_msg_id_counter{1};
 using json = nlohmann::json;
 
 namespace lm {
+    static bool contains(std::string_view text, std::string_view word) {
+        return text.find(word) != std::string_view::npos;
+    }
+
     static bool prompt_requires_tool_use(const std::string& prompt) {
         std::string lower = prompt;
+
         std::transform(lower.begin(), lower.end(), lower.begin(), [](unsigned char c) {
-            return static_cast<char>(std::tolower(c));
-        });
+                return static_cast<char>(std::tolower(c));
+            });
 
-        static const char* markers[] = {
-            "arquivo", "arquivos", "pasta", "pastas", "diretório", "diretórios", "caminho", "caminhos",
-            "codigo", "código", "projeto", "projetos", "ler", "listar", "mostrar", "editar",
-            "modificar", "criar", "explorar", "conteudo", "conteúdo", "file", "files", "folder",
-            "folders", "directory", "directories", "path", "paths", "code", "project", "src", "include"
-        };
+        int score = 0;
 
-        for (const char* marker : markers) {
-            if (lower.find(marker) != std::string::npos) return true;
+        static const std::string_view action_words[] = { "ler", "listar", "mostrar", "abrir",
+            "editar", "modificar", "alterar", "criar", "remover", "deletar", "analisar",
+            "explorar", "inspecionar", "verificar"};
+        static const std::string_view file_words[] = {"arquivo", "arquivos", "file", "files"};
+        static const std::string_view project_words[] = {"pasta", "pastas", "diretorio", "diretorios",
+            "diretório", "diretórios", "folder", "folders", "directory", "directories", "caminho",
+            "caminhos", "path", "paths", "codigo", "código", "fonte", "source", "projeto", "projetos",
+            "workspace", "repositorio", "repositório", "repository"};
+
+        for (auto word : action_words) {
+            if (contains(lower, word)) score += 2;
         }
-        return false;
+        for (auto word : file_words) {
+            if (contains(lower, word)) score += 3;
+        }
+        for (auto word : project_words) {
+            if (contains(lower, word)) score += 3;
+        }
+
+        // Arquivos comuns de projetos
+        static const std::regex project_refs(
+            R"((\.cpp|\.hpp|\.h|\.c|\.cc|\.cxx|\.py|\.js|\.ts|\.tsx|\.java|\.cs|\.go|\.rs|\.php|\.json|\.xml|\.yaml|\.yml|\.toml|\.ini|cmakelists\.txt|package\.json|cargo\.toml|makefile|dockerfile|readme\.md|src/|include/))",
+            std::regex_constants::icase);
+
+        if (std::regex_search(lower, project_refs)) score += 5;
+
+        // Caminhos típicos
+        static const std::regex path_pattern( R"(([a-z]:\\|\/home\/|\/usr\/|\/opt\/|\.\/|\.\.\/|\\))", std::regex_constants::icase);
+
+        if (std::regex_search(lower, path_pattern)) score += 5;
+
+        return score >= 3;
     }
 
     static std::string format_list_directory_compact(const std::string& json_str) {
@@ -68,13 +99,13 @@ namespace lm {
             ss << "dir(" << files.size() << "):\n";
 
             for (const auto& file : files) {
-                std::string path = file.value("path", "");
-                bool is_dir = file.value("is_directory", false);
+                std::string path = file.value("p", "");
+                bool is_dir = file.value("d", false);
 
                 if (is_dir) {
                     ss << "d " << path << "\n";
                 } else {
-                    ss << "f " << path << " (" << file.value("size", 0) << " bytes)";
+                    ss << "f " << path << " (" << file.value("s", 0) << " bytes)";
                     if (file.contains("m") && !file.value("m", "").empty()) {
                         ss << " " << file.value("m", "");
                     }
@@ -101,9 +132,9 @@ namespace lm {
             ss << "search(" << res.value("count", 0) << "):\n";
             for (const auto& item : res["matches"]) {
                 if (item.value("is_directory", false)) {
-                    ss << "d " << item.value("path", "") << "\n";
+                    ss << "d " << item.value("p", "") << "\n";
                 } else {
-                    ss << "f " << item.value("path", "") << " (" << item.value("size", 0) << " bytes)\n";
+                    ss << "f " << item.value("p", "") << " (" << item.value("size", 0) << " bytes)\n";
                 }
             }
             return ss.str();
@@ -118,7 +149,7 @@ namespace lm {
             if (res.contains("error")) return "erro: " + res["error"].get<std::string>();
             if (!res.value("exists", false)) return "nao existe";
             std::stringstream ss;
-            ss << res.value("name", "") << " | " << (res.value("is_directory", false) ? "dir" : "file") << " | " << res.value("size", 0);
+            ss << res.value("n", "") << " | " << (res.value("is_directory", false) ? "dir" : "file") << " | " << res.value("size", 0);
             return ss.str();
         } catch (...) {
             return json_str;
@@ -151,7 +182,18 @@ namespace lm {
         
         // Set a default system prompt
         custom_system_prompt =
-        "Programmer assistant. Use tools for local files. Reply in Portuguese.\n";
+        "You are a code analysis agent.\n"
+        "Reply in Portuguese.\n"
+        "\n"
+        "STRICT RULES:\n"
+        "- Never output XML.\n"
+        "- Never output <tool_call>.\n"
+        "- Never output markdown describing tools.\n"
+        "- Tool calls MUST be returned ONLY using the OpenAI tool_calls field.\n"
+        "- If a tool is needed, leave content empty and populate tool_calls.\n"
+        "- If no tool is needed, answer normally.\n"
+        "- Any XML output is invalid.\n";
+
         set_system_prompt(custom_system_prompt);
     }
 
@@ -267,6 +309,7 @@ namespace lm {
         std::string turn_id = "msg_" + std::to_string(global_msg_id_counter++);
 
         std::thread([this, user_prompt, turn_id, on_status_change, on_complete]() {
+            reasoning_accum.clear();
             tools::current_tool_message_id = turn_id;
 
             // Add user message
@@ -281,9 +324,10 @@ namespace lm {
             std::string final_content;
             std::string err_out;
             bool force_tool_use = prompt_requires_tool_use(user_prompt);
+            bool completion_signaled = false;
 
             // Cache estático de tools (evita rebuild a cada request)
-            static json cached_tools = nullptr;
+            static json cached_tools;
 
             while (loop) {
                 json req = json::object();
@@ -348,7 +392,7 @@ namespace lm {
                 req["temperature"] = temperature;
                 if (max_tokens > 0) req["max_tokens"] = max_tokens;
 
-                if (cached_tools.is_null()) {
+                if (!cached_tools.is_array() || cached_tools.empty()) {
                     cached_tools = json::array();
 
                     cached_tools.push_back({
@@ -374,7 +418,11 @@ namespace lm {
                             {"description", "Lê arquivo"},
                             {"parameters", {
                                 {"type", "object"},
-                                {"properties", {{"path", {{"type", "string"}}}}},
+                                {"properties", {
+                                    {"path", {{"type", "string"}}},
+                                    {"chunk_size", {{"type", "integer"}}},
+                                    {"offset", {{"type", "integer"}}}
+                                }},
                                 {"required", json::array({"path"})}
                             }}
                         }}
@@ -430,7 +478,7 @@ namespace lm {
                 }
 
                 req["tools"] = cached_tools;
-                req["tool_choice"] = force_tool_use ? "required" : "auto";
+                req["tool_choice"] = "auto";
                 req["parallel_tool_calls"] = false;
 
                 std::string url = "http://" + host + ":" + std::to_string(port) + "/v1/chat/completions";
@@ -441,6 +489,7 @@ namespace lm {
 
                 if (!make_post_request(url, req.dump(), response, err_out)) {
                     on_complete(false, "Falha na conexao: " + err_out);
+                    completion_signaled = true;
                     return;
                 }
 
@@ -448,25 +497,135 @@ namespace lm {
                     json res = json::parse(response);
 
                     if (res.contains("error")) {
-                        on_complete(false, res["error"]["message"].get<std::string>());
+                        std::string err_msg = res["error"]["message"].get<std::string>();
+                        
+                        // Detecta estouro de contexto: tenta podar e retentar
+                        if (err_msg.find("context") != std::string::npos ||
+                            err_msg.find("length") != std::string::npos ||
+                            err_msg.find("token") != std::string::npos ||
+                            err_msg.find("maximum") != std::string::npos) {
+                            on_status_change("Contexto excedido - otimizando...");
+                            // Poda: remove 1/3 do historico de tool calls mais antigos
+                            {
+                                std::lock_guard<std::mutex> lock(history_mutex);
+                                size_t removed = 0;
+                                size_t target = history.size() / 3;
+                                auto it = history.begin();
+                                while (it != history.end() && removed < target) {
+                                    if (it->role == "tool" || (it->role == "assistant" && !it->tool_calls.is_null())) {
+                                        it = history.erase(it);
+                                        removed++;
+                                    } else {
+                                        ++it;
+                                    }
+                                }
+                                std::cout << "[Context Pruning] Removidos " << removed << " turnos antigos para liberar contexto." << std::endl;
+                            }
+                            continue; // Tenta novamente com contexto reduzido
+                        }
+
+                        on_complete(false, "Erro do modelo: " + err_msg);
+                        completion_signaled = true;
                         return;
                     }
 
                     auto& choice = res["choices"][0];
                     auto& msg = choice["message"];
 
+                    std::cout << "\n=== MODEL OUTPUT DEBUG ===\n";
+                    if (msg.contains("content")) std::cout << "content: " << msg["content"] << "\n";
+                    if (msg.contains("reasoning_content")) std::cout << "reasoning_content: " << msg["reasoning_content"] << "\n";
+                    if (msg.contains("tool_calls")) std::cout << "tool_calls: " << msg["tool_calls"].dump(2) << "\n";
+
+                try {
+                        if (msg.contains("reasoning_content") && msg["reasoning_content"].is_string()) {
+                            std::string rc = msg["reasoning_content"].get<std::string>();
+                            reasoning_accum += rc;
+                        } else if (msg.contains("reasoning") && msg["reasoning"].is_string()) {
+                            std::string rc = msg["reasoning"].get<std::string>();
+                            reasoning_accum += rc;
+                        } else if (msg.contains("reasoning_tokens")) {
+                            reasoning_accum += msg["reasoning_tokens"].dump();
+                        }
+                    }
+                    catch (...) {
+                        // optional safety
+                    }
+
                     std::string content;
                     if (msg.contains("content") && !msg["content"].is_null()) content = msg["content"].get<std::string>();
 
                     json tool_calls = nullptr;
-                    if (msg.contains("tool_calls") && !msg["tool_calls"].is_null()) tool_calls = msg["tool_calls"];
+                    bool has_tool_calls_from_json = msg.contains("tool_calls") && msg["tool_calls"].is_array() && !msg["tool_calls"].empty();
+
+                    if (has_tool_calls_from_json) {
+                        content = "[tool use]";
+                        tool_calls = msg["tool_calls"];
+                    } else {
+                        // Fallback: tenta extrair tool_call XML do reasoning ou content
+                        // Formato esperado (qwen): <tool_call>\n<function=funcName>\n<parameter=key>value</parameter>\n</function>\n</tool_call>
+                        std::string combined = reasoning_accum + "\n" + content;
+                        std::regex xml_tool_call(R"(<tool_call>\s*<function=(\w+)>([\s\S]*?)</function>\s*</tool_call>)");
+                        std::smatch match;
+                        if (std::regex_search(combined, match, xml_tool_call)) {
+                            std::string func_name = match[1].str();
+                            std::string args_xml = match[2].str();
+                            
+                            // Extrai parametros do XML <parameter=key>value</parameter>
+                            json args = json::object();
+                            std::regex param_regex(R"(<parameter=(\w+)>([\s\S]*?)</parameter>)");
+                            auto param_begin = std::sregex_iterator(args_xml.begin(), args_xml.end(), param_regex);
+                            auto param_end = std::sregex_iterator();
+                            for (auto it = param_begin; it != param_end; ++it) {
+                                std::string key = (*it)[1].str();
+                                std::string val = (*it)[2].str();
+                                // Trim whitespace
+                                val.erase(0, val.find_first_not_of(" \n\r\t"));
+                                val.erase(val.find_last_not_of(" \n\r\t") + 1);
+                                // Tenta detectar boolean
+                                if (val == "true") args[key] = true;
+                                else if (val == "false") args[key] = false;
+                                else args[key] = val;
+                            }
+                            
+                            json call = json::object();
+                            call["id"] = "xml_" + std::to_string(global_msg_id_counter.load());
+                            call["type"] = "function";
+                            call["function"] = json::object();
+                            call["function"]["name"] = func_name;
+                            call["function"]["arguments"] = args.dump();
+                            
+                            json arr = json::array();
+                            arr.push_back(call);
+                            tool_calls = arr;
+                            content = "[tool use]";
+                            std::cout << "[XML Fallback] Parsed tool call: " << func_name << " args=" << args.dump() << std::endl;
+                        }
+                    }
+
+                    std::cout << "\n=== RAW MODEL RESPONSE ===\n";
+                    std::cout << response << std::endl;
 
                     // salva assistant msg
                     {
                         std::lock_guard<std::mutex> lock(history_mutex);
 
-                        history.push_back({"assistant", content, "", "", tool_calls, get_current_timestamp(), turn_id});
+                        Message assistant_msg;
+                        assistant_msg.role = "assistant";
+                        if (msg.contains("tool_calls") && !msg["tool_calls"].is_null()) {
+                            assistant_msg.content = "";
+                        } else {
+                            assistant_msg.content = content;
+                        }
+                        assistant_msg.tool_calls = tool_calls;
+                        assistant_msg.timestamp = get_current_timestamp();
+                        assistant_msg.msg_id = turn_id;
+                        assistant_msg.reasoning = reasoning_accum;
+                        history.push_back(assistant_msg);
                     }
+
+                    // Guard contra loop infinito de ferramentas (usando thread_local para persistir entre iterações)
+                    static thread_local int tool_loop_counter = 0;
 
                     // TOOL LOOP
                     if (!tool_calls.is_null() && !tool_calls.empty()) {
@@ -474,20 +633,35 @@ namespace lm {
 
                         if (!run_tool_calls_loop(tool_calls, on_status_change, err_out)) {
                             on_complete(false, err_out);
+                            completion_signaled = true;
                             return;
                         }
 
+                        tool_loop_counter++;
+                        if (tool_loop_counter > 15) {
+                            on_complete(false, "Loop infinito de ferramentas detectado (15+ ciclos).");
+                            completion_signaled = true;
+                            return;
+                        }
                     } else {
+                        // Reset contador quando modelo finalmente responde sem tools
+                        tool_loop_counter = 0;
                         final_content = content;
                         loop = false;
                     }
                 } catch (const std::exception& e) {
                     on_complete(false, std::string("Erro JSON: ") + e.what());
+                    completion_signaled = true;
                     return;
                 }
             }
 
-            on_complete(true, final_content);
+            if (!completion_signaled) {
+                std::string final_output = final_content;
+                std::string reasoning_final = reasoning_accum;
+                if (!reasoning_final.empty()) final_output += "\n\n[REASONING]\n" + reasoning_final;
+                on_complete(true, final_output);
+            }
 
         }).detach();
     }
@@ -512,7 +686,9 @@ namespace lm {
                     result = tools::list_directory(path, recursive);
                 } else if (func_name == "read_file") {
                     std::string path = args["path"].get<std::string>();
-                    result = tools::read_file(path);
+                    size_t chunk_size = args.value("chunk_size", 8192);
+                    size_t offset = args.value("offset", 0);
+                    result = tools::read_file(path, chunk_size, offset);
                 } else if (func_name == "search_files") {
                     std::string path = args["path"].get<std::string>();
                     std::string pattern = args.value("pattern", "");

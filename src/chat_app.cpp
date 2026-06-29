@@ -11,6 +11,8 @@
 #include <sstream>
 #include <iomanip>
 #include <cctype>
+#include "../include/semantic_search.h"
+#include <nlohmann/json.hpp>
 
 namespace fs = std::filesystem;
 using json = nlohmann::json;
@@ -35,7 +37,7 @@ static std::string wrap_text(const std::string& text, float wrap_width) {
     std::string result;
     std::string word;
     std::string current_line;
-    
+
     auto flush_word = [&]() {
         if (word.empty()) return;
         std::string test_line = current_line.empty() ? word : current_line + " " + word;
@@ -80,7 +82,6 @@ static std::string format_size(size_t size) {
 }
 
 namespace gui {
-
 ChatApp::ChatApp() {
     std::strcpy(host_buf, "localhost");
     port = 1234;
@@ -88,13 +89,12 @@ ChatApp::ChatApp() {
     std::strcpy(input_buf, "");
     std::strcpy(system_prompt_buf, "");
     std::strcpy(file_filter_buf, "");
-    
+
     // Default workspace path is current path
     std::string current_path = fs::current_path().generic_string();
     std::strcpy(browser_path_buf, current_path.c_str());
-    
-    // Restore saved settings (host, port, model)
-    load_config();
+
+    load_config(); // Restore saved settings (host, port, model)
 }
 
 ChatApp::~ChatApp() {
@@ -102,9 +102,7 @@ ChatApp::~ChatApp() {
 
 void ChatApp::init() {
     apply_custom_theme();
-    
-    // Start lightweight: tool schema is sent by LM Studio API automatically
-    check_server_connection();
+    check_server_connection(); // Start lightweight: tool schema is sent by LM Studio API automatically
 }
 
 void ChatApp::check_server_connection() {
@@ -115,10 +113,10 @@ void ChatApp::check_server_connection() {
     // Remove trailing slash
     while (!h.empty() && h.back() == '/') h.pop_back();
     std::strcpy(host_buf, h.c_str());
-    
+
     client.set_server(host_buf, port);
     client.set_model(model_buf);
-    
+
     std::string err;
     connected = client.check_connection(err);
     if (!connected) {
@@ -127,14 +125,14 @@ void ChatApp::check_server_connection() {
         connection_error = "";
         std::strcpy(model_buf, client.get_model().c_str());
     }
-    
+
     // Persist whatever the user configured
     save_config();
 }
 
 void ChatApp::apply_custom_theme() {
     ImGuiStyle& style = ImGui::GetStyle();
-    
+
     // Enable rounded corners
     style.WindowRounding = 6.0f;
     style.FrameRounding = 4.0f;
@@ -190,33 +188,33 @@ void ChatApp::render() {
     ImGuiViewport* viewport = ImGui::GetMainViewport();
     ImGui::SetNextWindowPos(viewport->WorkPos);
     ImGui::SetNextWindowSize(viewport->WorkSize);
-    
+
     ImGuiWindowFlags window_flags = 
         ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | 
         ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse | 
         ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoNavFocus;
-        
+
     if (ImGui::Begin("MainWorkspace", nullptr, window_flags)) {
         float width = ImGui::GetContentRegionAvail().x;
-        
+
         // Split 50% / 50%
         ImGui::BeginChild("LeftPanel", ImVec2(width * 0.5f - 4.0f, 0), true);
         render_left_panel();
         ImGui::EndChild();
-        
+
         ImGui::SameLine();
-        
+
         ImGui::BeginChild("RightPanel", ImVec2(0, 0), true);
         render_right_panel();
         ImGui::EndChild();
-        
+
         render_diff_popup();
         render_file_content_popup();
         render_revert_confirm_popup();
-        
+
         ImGui::End();
     }
-    
+
     // Save browser path if it has changed
     static std::string last_saved_browser_path = "";
     if (last_saved_browser_path != std::string(browser_path_buf)) {
@@ -229,7 +227,7 @@ void ChatApp::render_left_panel() {
     // Chat Header / Connection Configs
     ImGui::TextColored(ImVec4(0.6f, 0.8f, 1.0f, 1.0f), "CONEXAO DO SERVIDOR (LM STUDIO)");
     ImGui::Separator();
-    
+
     ImGui::PushItemWidth(120.0f);
     ImGui::InputText("Host", host_buf, sizeof(host_buf));
     ImGui::SameLine();
@@ -237,47 +235,47 @@ void ChatApp::render_left_panel() {
     ImGui::SameLine();
     ImGui::InputText("Modelo", model_buf, sizeof(model_buf));
     ImGui::PopItemWidth();
-    
+
     ImGui::SameLine();
     if (ImGui::Button("Conectar / Atualizar")) check_server_connection();
-    
+
     // Status text
     if (connected) {
         ImGui::TextColored(ImVec4(0.4f, 0.9f, 0.4f, 1.0f), "Conectado. Modelo ativo: %s", model_buf);
     } else {
         ImGui::TextColored(ImVec4(0.9f, 0.4f, 0.4f, 1.0f), "Desconectado: %s", connection_error.c_str());
     }
-    
+
     ImGui::Separator();
-    
+
     // Chat messages history area
     ImGui::TextColored(ImVec4(0.8f, 0.8f, 1.0f, 1.0f), "CONVERSA");
     float available_height = ImGui::GetContentRegionAvail().y - ImGui::GetFrameHeightWithSpacing() * 3.5f;
-    
+
     ImGui::BeginChild("ChatLogs", ImVec2(0, available_height), true);
     auto history = client.get_history();
     for (size_t i = 0; i < history.size(); ++i) {
         auto& msg = history[i];
-        
+
         if (msg.role == "system_info") {
             ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.85f, 0.85f, 0.60f, 1.0f));
-            
+
             // Copyable text
             std::string wrapped = wrap_text(msg.content, ImGui::GetContentRegionAvail().x - 15.0f);
             ImVec2 size = ImGui::CalcTextSize(wrapped.c_str());
             size.y += ImGui::GetStyle().FramePadding.y * 2.0f + 4.0f;
             size.x = ImGui::GetContentRegionAvail().x;
-            
+
             ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0, 0, 0, 0));
             ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0, 0, 0, 0));
             ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0, 0));
-            
+
             std::string id = "##msg_content_info_" + std::to_string(i);
             ImGui::InputTextMultiline(id.c_str(), const_cast<char*>(wrapped.c_str()), wrapped.size(), size, ImGuiInputTextFlags_ReadOnly);
-            
+
             ImGui::PopStyleColor(2);
             ImGui::PopStyleVar();
-            
+
             ImGui::PopStyleColor();
             ImGui::Separator();
         } else if (msg.role == "system") {
@@ -289,14 +287,14 @@ void ChatApp::render_left_panel() {
                 ImVec2 size = ImGui::CalcTextSize(wrapped.c_str());
                 size.y += ImGui::GetStyle().FramePadding.y * 2.0f + 4.0f;
                 size.x = ImGui::GetContentRegionAvail().x;
-                
+
                 ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0, 0, 0, 0));
                 ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0, 0, 0, 0));
                 ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0, 0));
-                
+
                 std::string id = "##msg_content_sys_" + std::to_string(i);
                 ImGui::InputTextMultiline(id.c_str(), const_cast<char*>(wrapped.c_str()), wrapped.size(), size, ImGuiInputTextFlags_ReadOnly);
-                
+
                 ImGui::PopStyleColor(2);
                 ImGui::PopStyleVar();
             }
@@ -304,31 +302,51 @@ void ChatApp::render_left_panel() {
             std::string label = "Ferramenta executada: " + msg.name + " (" + msg.timestamp + ")##" + std::to_string(i);
             if (ImGui::CollapsingHeader(label.c_str())) {
                 ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.6f, 0.9f, 0.6f, 1.0f));
-                
+
                 // Copyable text
                 std::string wrapped = wrap_text(msg.content, ImGui::GetContentRegionAvail().x - 15.0f);
                 ImVec2 size = ImGui::CalcTextSize(wrapped.c_str());
                 size.y += ImGui::GetStyle().FramePadding.y * 2.0f + 4.0f;
                 size.x = ImGui::GetContentRegionAvail().x;
-                
+
                 ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0, 0, 0, 0));
                 ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0, 0, 0, 0));
                 ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0, 0));
-                
+
                 std::string id = "##msg_content_tool_" + std::to_string(i);
                 ImGui::InputTextMultiline(id.c_str(), const_cast<char*>(wrapped.c_str()), wrapped.size(), size, ImGuiInputTextFlags_ReadOnly);
-                
+
                 ImGui::PopStyleColor(2);
                 ImGui::PopStyleVar();
-                
+
                 ImGui::PopStyleColor();
             }
         } else {
             bool is_user = (msg.role == "user");
             ImVec4 label_color = is_user ? ImVec4(0.4f, 0.8f, 1.0f, 1.0f) : ImVec4(0.8f, 0.5f, 1.0f, 1.0f);
             std::string sender = is_user ? "Usuario" : "Modelo AI";
-            
+
             ImGui::TextColored(label_color, "[%s] %s:", msg.timestamp.c_str(), sender.c_str());
+
+            if (!msg.reasoning.empty()) {
+                ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.2f, 1.0f), "Raciocinio:");
+
+                std::string id = "##reasoning_" + std::to_string(i);
+
+                ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0,0,0,0));
+                ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0,0,0,0));
+
+                ImGui::InputTextMultiline(
+                    id.c_str(),
+                    const_cast<char*>(msg.reasoning.c_str()),
+                    msg.reasoning.size() + 1,
+                    ImVec2(ImGui::GetContentRegionAvail().x, 80),
+                    ImGuiInputTextFlags_ReadOnly
+                );
+
+                ImGui::PopStyleColor(2);
+            }
+
             if (msg.role == "assistant" && !msg.msg_id.empty()) {
                 auto changes = tools::get_change_history();
                 bool has_changes = false;
@@ -354,9 +372,7 @@ void ChatApp::render_left_panel() {
                                 }
                             }
                         }
-                        if (!revert_affected_files.empty()) {
-                            show_revert_confirm_popup = true;
-                        }
+                        if (!revert_affected_files.empty()) show_revert_confirm_popup = true;
                     }
                     ImGui::PopStyleColor(3);
                 }
@@ -364,27 +380,16 @@ void ChatApp::render_left_panel() {
 
             // Copyable text
             std::string wrapped = wrap_text(msg.content, ImGui::GetContentRegionAvail().x - 15.0f);
-            ImVec2 size = ImGui::CalcTextSize(wrapped.c_str());
-            size.y += ImGui::GetStyle().FramePadding.y * 2.0f + 4.0f;
-            size.x = ImGui::GetContentRegionAvail().x;
-            
-            ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0, 0, 0, 0));
-            ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0, 0, 0, 0));
-            ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0, 0));
-            
-            std::string id = "##msg_content_" + std::to_string(i);
-            ImGui::InputTextMultiline(id.c_str(), const_cast<char*>(wrapped.c_str()), wrapped.size(), size, ImGuiInputTextFlags_ReadOnly);
-            
-            ImGui::PopStyleColor(2);
-            ImGui::PopStyleVar();
-            
+
+            ImGui::PushTextWrapPos(ImGui::GetContentRegionAvail().x);
+            ImGui::TextUnformatted(wrapped.c_str());
+            ImGui::PopTextWrapPos();
+
             ImGui::Separator();
         }
     }
     
-    if (scroll_to_bottom.exchange(false, std::memory_order_acq_rel)) {
-        ImGui::SetScrollHereY(1.0f);
-    }
+    if (scroll_to_bottom.exchange(false, std::memory_order_acq_rel)) ImGui::SetScrollHereY(1.0f);
     ImGui::EndChild();
     
     // Bottom generation status
@@ -396,12 +401,11 @@ void ChatApp::render_left_panel() {
         }
         ImGui::TextColored(ImVec4(0.6f, 0.6f, 1.0f, 1.0f), "IA: %s", status_copy.c_str());
     } else {
-        ImGui::Text(""); // Spacing
+        ImGui::Text("");
     }
-    
+
     // Message Input bar
-    // Message Input bar (MAIOR + Ctrl+Enter newline + Enter send)
-    ImVec2 input_size = ImVec2(-160.0f, 140.0f);
+    ImVec2 input_size = ImVec2(-160.0f, 220.0f);
 
     // Input maior e multiline
     ImGui::InputTextMultiline(
@@ -431,8 +435,7 @@ void ChatApp::render_left_panel() {
 
     ImGui::SameLine();
 
-    // Botão enviar
-    bool send_clicked = ImGui::Button("Enviar", ImVec2(70, 0));
+    bool send_clicked = ImGui::Button("Enviar", ImVec2(70, 0)); // Botão enviar
 
     ImGui::SameLine();
 
@@ -477,8 +480,11 @@ void ChatApp::render_left_panel() {
 
         client.set_system_prompt(system_prompt);
 
+        std::string context = semantic::retrieve_context(prompt);
+        std::string final_prompt = "Use o contexto abaixo:\n\n" + context + "\n\nPergunta:\n" + prompt;
+
         client.send_message(
-            prompt,
+            final_prompt,
             [this](const std::string& status) {std::lock_guard<std::mutex> lock(status_mutex); current_status = status;},
             [this](bool success, const std::string& final_text) {
                 is_generating.store(false, std::memory_order_release);
@@ -502,14 +508,10 @@ void ChatApp::render_right_panel() {
         if (ImGui::BeginTabItem("Explorador de Arquivos")) {
             ImGui::InputText("Caminho Root", browser_path_buf, sizeof(browser_path_buf));
             ImGui::SameLine();
-            if (ImGui::Button("Atualizar")) {
-                // refresh is implicit on next render
-            }
+            if (ImGui::Button("Indexar Projeto (Embeddings)")) semantic::index_project(browser_path_buf);
             ImGui::SameLine();
-            if (ImGui::Button("Raiz")) {
-                std::strcpy(browser_path_buf, fs::current_path().generic_string().c_str());
-            }
-            
+            if (ImGui::Button("Raiz")) std::strcpy(browser_path_buf, fs::current_path().generic_string().c_str());
+
             // Sorting controls
             if (ImGui::SmallButton(browser_sort_ascending ? "Nome ^" : "Nome v")) {
                 browser_sort_column = 0;
@@ -537,21 +539,33 @@ void ChatApp::render_right_panel() {
             if (ImGui::Button("Buscar arquivos")) {
                 std::strcpy(input_buf, "Use search_files para localizar arquivos relevantes neste diretório e me diga os resultados.");
             }
-            
+
             ImGui::Separator();
             
-            std::string list_json = tools::list_directory(browser_path_buf, false);
+            std::string list_json = tools::list_directory(browser_path_buf, false, false);
+
             try {
                 json res = json::parse(list_json);
-                
-                if (res.contains("files") && res["files"].is_array()) {
+
+                if (res.contains("hidden")) {
+                    int hidden = res["hidden"];
+                    if (hidden > 0) ImGui::TextDisabled("%d itens ocultados (.git, node_modules, etc)", hidden);
+                }
+
+                if (res.contains("error") || res.contains("e")) {
+                    std::string error_msg = res.contains("error") ? res["error"].get<std::string>() : res["e"].get<std::string>();
+                    ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "%s", error_msg.c_str());
+                } else if (res.contains("files") && res["files"].is_array()) {
                     auto& files = res["files"];
+
                     std::sort(files.begin(), files.end(), [&](const json& a, const json& b) {
                         bool a_dir = a.value("d", false);
                         bool b_dir = b.value("d", false);
+
                         if (a_dir != b_dir) return a_dir > b_dir;
-                        
+
                         bool cmp = false;
+
                         if (browser_sort_column == 0) {
                             cmp = a.value("name", "").compare(b.value("name", "")) < 0;
                         } else if (browser_sort_column == 1) {
@@ -559,72 +573,99 @@ void ChatApp::render_right_panel() {
                         } else if (browser_sort_column == 2) {
                             cmp = a.value("m", "").compare(b.value("m", "")) < 0;
                         }
+
                         return browser_sort_ascending ? cmp : !cmp;
                     });
-                }
-                if (res.contains("error") || res.contains("e")) {
-                    std::string error_msg = res.contains("error") ? res["error"].get<std::string>() : res["e"].get<std::string>();
-                    ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "%s", error_msg.c_str());
-                } else {
-                    auto files_it = res.find("files");
-                    if (files_it == res.end()) files_it = res.find("f");
-                    if (files_it == res.end() || !files_it->is_array()) {
-                        ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "Resposta inesperada do explorador.");
-                    } else {
-                        const auto& files = *files_it;
-                        
-                        // Directory Up button
-                        if (ImGui::Button(".. [Voltar Pasta]")) {
-                            fs::path current(browser_path_buf);
-                            if (current.has_parent_path()) {
-                                std::strcpy(browser_path_buf, current.parent_path().generic_string().c_str());
-                            }
-                        }
-                        
-                        ImGui::BeginTable("file_browser", 3, ImGuiTableFlags_Borders | ImGuiTableFlags_Resizable | ImGuiTableFlags_ScrollY);
-                        ImGui::BeginChild("FileBrowserList", ImVec2(0, 0), true);
+
+                    if (ImGui::Button(".. [Voltar Pasta]")) {
+                        fs::path current(browser_path_buf);
+                        if (current.has_parent_path()) std::strcpy(browser_path_buf, current.parent_path().generic_string().c_str());
+                    }
+
+                    ImGui::Separator();
+
+                    if (ImGui::BeginTable("file_browser", 3,
+                        ImGuiTableFlags_Borders |
+                        ImGuiTableFlags_Resizable |
+                        ImGuiTableFlags_ScrollY |
+                        ImGuiTableFlags_RowBg)) {
+                        // HEADERS (sempre por frame)
+                        ImGui::TableSetupColumn("Nome", ImGuiTableColumnFlags_WidthStretch);
+                        ImGui::TableSetupColumn("Tamanho", ImGuiTableColumnFlags_WidthFixed, 90.0f);
+                        ImGui::TableSetupColumn("Modificação", ImGuiTableColumnFlags_WidthFixed, 130.0f);
+
+                        ImGui::TableHeadersRow();
+
                         if (files.empty()) {
+                            ImGui::TableNextRow();
+                            ImGui::TableSetColumnIndex(0);
                             ImGui::TextDisabled("Nenhum item encontrado nesta pasta.");
-                        }
-                        // Table header (rendered once per frame)
-                        static bool header_drawn = false;
-                        if (!header_drawn) {
-                            ImGui::TableSetupColumn("Nome", ImGuiTableColumnFlags_WidthStretch);
-                            ImGui::TableSetupColumn("Tamanho", ImGuiTableColumnFlags_WidthFixed, 90.0f);
-                            ImGui::TableSetupColumn("Modificação", ImGuiTableColumnFlags_WidthFixed, 130.0f);
-                            ImGui::TableHeadersRow();
-                            header_drawn = true;
                         }
 
                         for (const auto& file : files) {
-                            std::string name = file.value("name", file.value("p", std::string("")));
-                            std::string path = file.value("path", file.value("p", std::string("")));
-                            bool is_dir = file.value("is_directory", file.value("d", false));
+                            std::string name = file.value("name", file.value("p", ""));
+                            bool is_dir = file.value("d", false);
                             uint64_t size = file.value("s", 0);
                             std::string mtime = file.value("m", "");
 
-                            // Check if file name matches the filter (case-insensitive)
+                            // filtro
                             if (std::strlen(file_filter_buf) > 0) {
                                 std::string filter_str(file_filter_buf);
                                 std::string name_lower = name;
+
                                 std::transform(name_lower.begin(), name_lower.end(), name_lower.begin(), ::tolower);
+                                std::transform(filter_str.begin(), filter_str.end(), filter_str.begin(), ::tolower);
+
                                 if (name_lower.find(filter_str) == std::string::npos) continue;
                             }
 
                             ImGui::TableNextRow();
                             ImGui::TableSetColumnIndex(0);
-                            if (is_dir) {
-                                ImGui::TextColored(ImVec4(0.9f, 0.8f, 0.4f, 1.0f), "%s", name.c_str());
-                            } else {
-                                ImGui::Text("%s", name.c_str());
+
+                            // path absoluto
+                            fs::path current(browser_path_buf);
+                            fs::path full_path = current / name;
+                            std::string full_path_str = full_path.generic_string();
+
+                            // cor do diretório
+                            if (is_dir) ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.9f, 0.8f, 0.4f, 1.0f));
+
+                            // item clicável
+                            std::string label = name + "##" + full_path_str;
+                            ImGui::Selectable(label.c_str(), false, ImGuiSelectableFlags_SpanAllColumns);
+
+                            // DUPLO CLIQUEa)
+                            if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left) && is_dir) {
+                                std::strcpy(browser_path_buf, full_path_str.c_str());
                             }
+
+                            // CLIQUE DIREITO (popup)
+                            if (ImGui::IsItemHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
+                                ImGui::OpenPopup(full_path_str.c_str());
+                            }
+
+                            if (ImGui::BeginPopup(full_path_str.c_str())) {
+                                ImGui::Text("%s", full_path_str.c_str());
+                                ImGui::Separator();
+
+                                if (ImGui::MenuItem("Copiar path absoluto")) ImGui::SetClipboardText(full_path_str.c_str());
+
+                                ImGui::EndPopup();
+                            }
+
+                            if (is_dir) ImGui::PopStyleColor();
+
+                            // COLUNA 1 - tamanho
                             ImGui::TableSetColumnIndex(1);
-                            ImGui::Text("%s", format_size(size).c_str());
+                            if (!is_dir) ImGui::Text("%s", format_size(size).c_str());
+                            else ImGui::TextDisabled("-");
+
+                            // COLUNA 2 - modificação
                             ImGui::TableSetColumnIndex(2);
                             ImGui::Text("%s", mtime.c_str());
                         }
+
                         ImGui::EndTable();
-                        ImGui::EndChild();
                     }
                 }
             } catch (const std::exception& e) {
@@ -632,7 +673,7 @@ void ChatApp::render_right_panel() {
             }
             ImGui::EndTabItem();
         }
-        
+
         // Tab 2: Change History
         if (ImGui::BeginTabItem("Historico de Alteracoes")) {
             auto history = tools::get_change_history();
@@ -642,36 +683,36 @@ void ChatApp::render_right_panel() {
                 if (ImGui::Button("Limpar Historico")) tools::clear_change_history();
 
                 ImGui::Separator();
-                
+
                 ImGui::BeginChild("HistoryList", ImVec2(0, 0), true);
-                
+
                 // Show in reverse order (newest first)
                 for (int i = (int)history.size() - 1; i >= 0; --i) {
                     auto& change = history[i];
-                    
+
                     ImGui::PushID(change.id);
                     ImGui::TextColored(ImVec4(0.8f, 0.8f, 1.0f, 1.0f), "[ID: %d] %s", change.id, change.timestamp.c_str());
                     ImGui::Text("Arquivo: %s", change.filepath.c_str());
-                    
+
                     if (change.original_content.empty()) {
                         ImGui::Text("Operacao: Criacao de Arquivo");
                     } else {
                         ImGui::Text("Operacao: Modificacao de Arquivo");
                     }
-                    
+
                     if (change.reverted) {
                         ImGui::TextColored(ImVec4(0.9f, 0.4f, 0.4f, 1.0f), "Status: REVERTIDO");
                     } else {
                         ImGui::TextColored(ImVec4(0.4f, 0.9f, 0.4f, 1.0f), "Status: ATIVO");
                     }
-                    
+
                     if (ImGui::Button("Ver Diff")) {
                         selected_change_id = change.id;
                         show_diff_popup = true;
                     }
-                    
+
                     ImGui::SameLine();
-                    
+
                     ImGui::BeginDisabled(change.reverted);
                     if (ImGui::Button("Reverter Alteracao")) {
                         std::string err;
@@ -682,58 +723,59 @@ void ChatApp::render_right_panel() {
                         }
                     }
                     ImGui::EndDisabled();
-                    
+
                     if (selected_change_id == change.id && !revert_error.empty()) {
                         ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "Erro ao reverter: %s", revert_error.c_str());
                     }
-                    
+
                     ImGui::Separator();
                     ImGui::PopID();
                 }
-                
+
                 ImGui::EndChild();
             }
             ImGui::EndTabItem();
         }
-        
+
         // Tab 3: Tool Specs
         if (ImGui::BeginTabItem("Especificacoes de Ferramentas")) {
             ImGui::BeginChild("ToolSpecsList", ImVec2(0, 0), true);
-            
+
             ImGui::TextColored(ImVec4(0.9f, 0.9f, 0.6f, 1.0f), "FUNCOES C++ EXPOSTAS AO MODELO");
             ImGui::Separator();
-            
+
             ImGui::TextColored(ImVec4(0.4f, 0.8f, 1.0f, 1.0f), "1. list_directory");
-            ImGui::Text("Descricao: Lista conteudo de um diretorio.");
+            ImGui::Text("Descricao: Lista apenas arquivos e diretorios. " "Nao retorna conteudo dos arquivos.");
+            ImGui::BulletText("Diretorios como .git e node_modules " "sao ocultados por padrao.");
             ImGui::Text("Argumentos:");
             ImGui::BulletText("path (string): Caminho do diretorio (Ex: 'd:/access')");
             ImGui::BulletText("recursive (boolean, opcional): Listar pastas recursivamente");
             ImGui::Separator();
-            
+
             ImGui::TextColored(ImVec4(0.4f, 0.8f, 1.0f, 1.0f), "2. read_file");
             ImGui::Text("Descricao: Le o conteudo de um arquivo em texto puro.");
             ImGui::Text("Argumentos:");
             ImGui::BulletText("path (string): Caminho absoluto ou relativo do arquivo");
             ImGui::Separator();
-            
+
             ImGui::TextColored(ImVec4(0.4f, 0.8f, 1.0f, 1.0f), "3. modify_file");
             ImGui::Text("Descricao: Substitui trecho de arquivo. Se o arquivo nao existe, cria-o.");
             ImGui::Text("Argumentos:");
             ImGui::BulletText("path (string): Caminho do arquivo");
             ImGui::BulletText("target_content (string): Bloco exato a ser substituido (deve ser unico). Vazio se for criar novo arquivo.");
             ImGui::BulletText("replacement_content (string): Bloco de texto novo");
-            
+
             ImGui::EndChild();
             ImGui::EndTabItem();
         }
-        
+
         // Tab 4: Advanced Settings & Stats
         if (ImGui::BeginTabItem("Configuracoes")) {
             ImGui::BeginChild("SettingsArea", ImVec2(0, 0), true);
-            
+
             ImGui::TextColored(ImVec4(0.6f, 0.8f, 1.0f, 1.0f), "PARAMETROS DO MODELO");
             ImGui::Separator();
-            
+
             float temp = client.get_temperature();
             if (ImGui::SliderFloat("Temperatura", &temp, 0.0f, 2.0f, "%.2f")) client.set_temperature(temp);
             ImGui::TextDisabled("Valores baixos (ex: 0.2) sao mais precisos; altos sao mais criativos.");
@@ -747,6 +789,7 @@ void ChatApp::render_right_panel() {
                     client.set_max_tokens(-1);
                 }
             }
+
             if (limit_tokens) {
                 max_t = client.get_max_tokens();
                 if (ImGui::InputInt("Tokens maximos", &max_t)) {
@@ -754,28 +797,28 @@ void ChatApp::render_right_panel() {
                     client.set_max_tokens(max_t);
                 }
             }
-            
+
             ImGui::Spacing();
             ImGui::TextColored(ImVec4(0.6f, 0.8f, 1.0f, 1.0f), "OTIMIZACAO DE CONTEXTO (TOKENS)");
             ImGui::Separator();
-            
+
             int thresh = (int)client.get_pruning_threshold();
             if (ImGui::SliderInt("Limiar de Poda (Pruning)", &thresh, 5000, 100000, "%d chars")) {
                 client.set_pruning_threshold((size_t)thresh);
             }
             ImGui::TextDisabled("Poda arquivos e diretorios antigos quando o historico enviado ultrapassar este limite.");
-            
+
             // Statistics
             ImGui::Spacing();
             ImGui::TextColored(ImVec4(0.4f, 0.9f, 0.4f, 1.0f), "ESTATISTICAS DE CONTEXTO");
             ImGui::Separator();
-            
+
             size_t total_c = client.get_last_request_total_chars();
             size_t sent_c = client.get_last_request_sent_chars();
-            
+
             ImGui::Text("Tamanho total do historico local: %zu caracteres", total_c);
             ImGui::Text("Tamanho real enviado ao modelo:  %zu caracteres", sent_c);
-            
+
             if (total_c > 0) {
                 if (sent_c < total_c) {
                     size_t saved = total_c - sent_c;
@@ -787,24 +830,24 @@ void ChatApp::render_right_panel() {
             } else {
                 ImGui::TextDisabled("Envie uma mensagem para exibir estatisticas.");
             }
-            
+
             ImGui::Spacing();
             ImGui::TextColored(ImVec4(0.6f, 0.8f, 1.0f, 1.0f), "PROMPT DE SISTEMA CUSTOMIZADO");
             ImGui::Separator();
             ImGui::InputTextMultiline("##SystemPrompt", system_prompt_buf, sizeof(system_prompt_buf), ImVec2(-1.0f, 180.0f));
             if (ImGui::Button("Redefinir Padrao")) {
-                std::strcpy(system_prompt_buf, "Voce e um assistente de programacao util. "
-                                               "Voce pode ler e modificar arquivos locais usando as ferramentas fornecidas. "
-                                               "Sempre use a ferramenta modify_file se precisar editar um arquivo. "
-                                               "Quando for ler pastas ou arquivos, informe os caminhos corretos. "
-                                               "Sempre responda em Portugues.");
+                std::ifstream file("config.json");
+                json config;
+                file >> config;
+                std::string prompt = config["custom_system_prompt"];
+                std::strcpy(system_prompt_buf, prompt.c_str());
                 client.set_custom_system_prompt(system_prompt_buf);
             }
-            
+
             ImGui::EndChild();
             ImGui::EndTabItem();
         }
-        
+
         ImGui::EndTabBar();
     }
 }
@@ -819,7 +862,7 @@ void ChatApp::render_diff_popup() {
         auto it = std::find_if(history.begin(), history.end(), [this](const tools::FileChange& c) {
             return c.id == selected_change_id;
         });
-        
+
         if (it != history.end()) {
             ImGui::Text("Visualizando Alteracao ID: %d", it->id);
             ImGui::Text("Arquivo: %s", it->filepath.c_str());
@@ -829,11 +872,11 @@ void ChatApp::render_diff_popup() {
             ImGui::SameLine();
             ImGui::TextColored(ImVec4(0.4f, 0.9f, 0.4f, 1.0f), "(+) Linhas Adicionadas");
             ImGui::Separator();
-            
+
             ImGui::BeginChild("DiffViewerArea", ImVec2(0, -ImGui::GetFrameHeightWithSpacing()), true);
-            
+
             auto diff_lines = diff::generate_diff(it->original_content, it->modified_content);
-            
+
             // Draw using table for perfect columns
             if (ImGui::BeginTable("DiffTable", 4, ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersOuter | ImGuiTableFlags_ScrollY)) {
                 ImGui::TableSetupColumn("Orig", ImGuiTableColumnFlags_WidthFixed, 35.0f);
@@ -841,10 +884,10 @@ void ChatApp::render_diff_popup() {
                 ImGui::TableSetupColumn("T", ImGuiTableColumnFlags_WidthFixed, 20.0f);
                 ImGui::TableSetupColumn("Conteudo", ImGuiTableColumnFlags_WidthStretch);
                 ImGui::TableHeadersRow();
-                
+
                 for (const auto& line : diff_lines) {
                     ImGui::TableNextRow();
-                    
+
                     // Color row background depending on type
                     ImVec4 text_color = ImVec4(0.9f, 0.9f, 0.95f, 1.00f);
                     if (line.type == diff::LineType::Addition) {
@@ -854,7 +897,7 @@ void ChatApp::render_diff_popup() {
                         ImGui::TableSetBgColor(ImGuiTableBgTarget_RowBg0, ImGui::GetColorU32(ImVec4(0.3f, 0.1f, 0.1f, 0.4f)));
                         text_color = ImVec4(0.9f, 0.4f, 0.4f, 1.0f);
                     }
-                    
+
                     // Original Line Number
                     ImGui::TableSetColumnIndex(0);
                     if (line.original_line_num > 0) {
@@ -862,7 +905,7 @@ void ChatApp::render_diff_popup() {
                     } else {
                         ImGui::TextDisabled("-");
                     }
-                    
+
                     // Modified Line Number
                     ImGui::TableSetColumnIndex(1);
                     if (line.modified_line_num > 0) {
@@ -870,7 +913,7 @@ void ChatApp::render_diff_popup() {
                     } else {
                         ImGui::TextDisabled("-");
                     }
-                    
+
                     // Sign type
                     ImGui::TableSetColumnIndex(2);
                     if (line.type == diff::LineType::Addition) {
@@ -880,7 +923,7 @@ void ChatApp::render_diff_popup() {
                     } else {
                         ImGui::Text(" ");
                     }
-                    
+
                     // Content
                     ImGui::TableSetColumnIndex(3);
                     ImGui::TextColored(text_color, "%s", line.content.c_str());
@@ -891,7 +934,7 @@ void ChatApp::render_diff_popup() {
         } else {
             ImGui::Text("Erro: Alteracao nao encontrada.");
         }
-        
+
         if (ImGui::Button("Fechar")) {
             show_diff_popup = false;
             ImGui::CloseCurrentPopup();
@@ -902,16 +945,16 @@ void ChatApp::render_diff_popup() {
 
 void ChatApp::render_file_content_popup() {
     if (show_file_content_popup) ImGui::OpenPopup("Visualizar Arquivo");
-    
+
     ImGui::SetNextWindowSize(ImVec2(800, 600), ImGuiCond_FirstUseEver);
     if (ImGui::BeginPopupModal("Visualizar Arquivo", &show_file_content_popup)) {
         ImGui::Text("Arquivo: %s", selected_file_path.c_str());
         ImGui::Separator();
-        
+
         ImGui::BeginChild("FileContentArea", ImVec2(0, -ImGui::GetFrameHeightWithSpacing()), true);
         ImGui::TextUnformatted(selected_file_content.c_str());
         ImGui::EndChild();
-        
+
         if (ImGui::Button("Fechar")) {
             show_file_content_popup = false;
             ImGui::CloseCurrentPopup();
@@ -933,7 +976,7 @@ void ChatApp::save_config() {
         cfg["max_tokens"] = client.get_max_tokens();
         cfg["pruning_threshold"] = client.get_pruning_threshold();
         cfg["custom_system_prompt"] = std::string(system_prompt_buf);
-        
+
         std::ofstream out(CONFIG_FILE);
         if (out.is_open()) out << cfg.dump(2);
     } catch (const std::exception& e) {}
@@ -943,12 +986,12 @@ void ChatApp::load_config() {
     // Set default buffers in case config parsing fails
     std::strcpy(file_filter_buf, "");
     std::strcpy(system_prompt_buf, client.get_custom_system_prompt().c_str());
-    
+
     try {
         std::ifstream in(CONFIG_FILE);
         if (in.is_open()) {
             json cfg = json::parse(in);
-            
+
             if (cfg.contains("host") && cfg["host"].is_string()) {
                 std::string h = cfg["host"].get<std::string>();
                 std::strcpy(host_buf, h.c_str());
@@ -960,7 +1003,7 @@ void ChatApp::load_config() {
                 std::string m = cfg["model"].get<std::string>();
                 std::strcpy(model_buf, m.c_str());
             }
-            
+
             // Advanced parameters
             if (cfg.contains("temperature") && cfg["temperature"].is_number()) {
                 client.set_temperature(cfg["temperature"].get<float>());
@@ -976,7 +1019,7 @@ void ChatApp::load_config() {
                 std::strcpy(system_prompt_buf, csp.c_str());
                 client.set_custom_system_prompt(csp);
             }
-            
+
             if (cfg.contains("browser_path") && cfg["browser_path"].is_string()) {
                 std::string bp = cfg["browser_path"].get<std::string>();
                 fs::path p(bp);
@@ -1008,9 +1051,9 @@ void ChatApp::render_revert_confirm_popup() {
         ImGui::BeginChild("RevertFilesList", ImVec2(0, 110), true);
         for (const auto& file : revert_affected_files) ImGui::BulletText("%s", file.c_str());
         ImGui::EndChild();
-        
+
         ImGui::Separator();
-        
+
         if (ImGui::Button("Sim, Reverter", ImVec2(120, 0))) {
             std::string err;
             auto changes = tools::get_change_history();
@@ -1028,13 +1071,13 @@ void ChatApp::render_revert_confirm_popup() {
             show_revert_confirm_popup = false;
             ImGui::CloseCurrentPopup();
         }
-        
+
         ImGui::SameLine();
         if (ImGui::Button("Cancelar", ImVec2(120, 0))) {
             show_revert_confirm_popup = false;
             ImGui::CloseCurrentPopup();
         }
-        
+
         ImGui::EndPopup();
     }
 }
