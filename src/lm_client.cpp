@@ -87,36 +87,28 @@ namespace lm {
     static std::string format_list_directory_compact(const std::string& json_str) {
         try {
             json res = json::parse(json_str);
-
             if (res.contains("error")) return "erro: " + res["error"].get<std::string>();
             if (!res.contains("files") || !res["files"].is_array()) return json_str;
 
             const auto& files = res["files"];
-
             std::stringstream ss;
-
-            // Cabeçalho ultra curto
             ss << "dir(" << files.size() << "):\n";
 
             for (const auto& file : files) {
                 std::string path = file.value("p", "");
                 bool is_dir = file.value("d", false);
-
                 if (is_dir) {
                     ss << "d " << path << "\n";
                 } else {
                     ss << "f " << path << " (" << file.value("s", 0) << " bytes)";
-                    if (file.contains("m") && !file.value("m", "").empty()) {
+                    if (file.contains("m") && !file.value("m", "").empty())
                         ss << " " << file.value("m", "");
-                    }
                     ss << "\n";
-            }
                 }
+            }
 
             if (res.value("truncated", false)) ss << "...trunc\n";
-
             return ss.str();
-
         } catch (...) {
             return json_str;
         }
@@ -131,10 +123,10 @@ namespace lm {
             std::stringstream ss;
             ss << "search(" << res.value("count", 0) << "):\n";
             for (const auto& item : res["matches"]) {
-                if (item.value("is_directory", false)) {
+                if (item.value("d", false)) {
                     ss << "d " << item.value("p", "") << "\n";
                 } else {
-                    ss << "f " << item.value("p", "") << " (" << item.value("size", 0) << " bytes)\n";
+                    ss << "f " << item.value("p", "") << " (" << item.value("s", 0) << " bytes)\n";
                 }
             }
             return ss.str();
@@ -149,7 +141,7 @@ namespace lm {
             if (res.contains("error")) return "erro: " + res["error"].get<std::string>();
             if (!res.value("exists", false)) return "nao existe";
             std::stringstream ss;
-            ss << res.value("n", "") << " | " << (res.value("is_directory", false) ? "dir" : "file") << " | " << res.value("size", 0);
+            ss << res.value("p", "") << " | " << (res.value("is_directory", false) ? "dir" : "file") << " | " << res.value("size", 0);
             return ss.str();
         } catch (...) {
             return json_str;

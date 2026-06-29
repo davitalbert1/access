@@ -86,6 +86,7 @@ ChatApp::ChatApp() {
     std::strcpy(host_buf, "localhost");
     port = 1234;
     std::strcpy(model_buf, "default");
+    std::strcpy(embedding_model_buf, "text-embedding-nomic-embed-text-v1.5");
     std::strcpy(input_buf, "");
     std::strcpy(system_prompt_buf, "");
     std::strcpy(file_filter_buf, "");
@@ -116,6 +117,7 @@ void ChatApp::check_server_connection() {
 
     client.set_server(host_buf, port);
     client.set_model(model_buf);
+    semantic::set_server(host_buf, port);
 
     std::string err;
     connected = client.check_connection(err);
@@ -547,11 +549,6 @@ void ChatApp::render_right_panel() {
             try {
                 json res = json::parse(list_json);
 
-                if (res.contains("hidden")) {
-                    int hidden = res["hidden"];
-                    if (hidden > 0) ImGui::TextDisabled("%d itens ocultados (.git, node_modules, etc)", hidden);
-                }
-
                 if (res.contains("error") || res.contains("e")) {
                     std::string error_msg = res.contains("error") ? res["error"].get<std::string>() : res["e"].get<std::string>();
                     ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "%s", error_msg.c_str());
@@ -566,8 +563,8 @@ void ChatApp::render_right_panel() {
 
                         bool cmp = false;
 
-                        if (browser_sort_column == 0) {
-                            cmp = a.value("name", "").compare(b.value("name", "")) < 0;
+                            if (browser_sort_column == 0) {
+                                cmp = a.value("p", "").compare(b.value("p", "")) < 0;
                         } else if (browser_sort_column == 1) {
                             cmp = a.value("s", 0) < b.value("s", 0);
                         } else if (browser_sort_column == 2) {
@@ -832,6 +829,17 @@ void ChatApp::render_right_panel() {
             }
 
             ImGui::Spacing();
+            ImGui::Spacing();
+            ImGui::TextColored(ImVec4(0.6f, 0.8f, 1.0f, 1.0f), "EMBEDDINGS (BUSCA SEMANTICA)");
+            ImGui::Separator();
+            ImGui::InputText("Modelo de Embedding", embedding_model_buf, sizeof(embedding_model_buf));
+            if (ImGui::IsItemDeactivatedAfterEdit()) {
+                semantic::set_model(embedding_model_buf);
+                save_config();
+            }
+            ImGui::TextDisabled("Usado para indexar e buscar arquivos relevantes via /v1/embeddings");
+
+            ImGui::Spacing();
             ImGui::TextColored(ImVec4(0.6f, 0.8f, 1.0f, 1.0f), "PROMPT DE SISTEMA CUSTOMIZADO");
             ImGui::Separator();
             ImGui::InputTextMultiline("##SystemPrompt", system_prompt_buf, sizeof(system_prompt_buf), ImVec2(-1.0f, 180.0f));
@@ -976,6 +984,7 @@ void ChatApp::save_config() {
         cfg["max_tokens"] = client.get_max_tokens();
         cfg["pruning_threshold"] = client.get_pruning_threshold();
         cfg["custom_system_prompt"] = std::string(system_prompt_buf);
+        cfg["embedding_model"] = std::string(embedding_model_buf);
 
         std::ofstream out(CONFIG_FILE);
         if (out.is_open()) out << cfg.dump(2);
@@ -1014,6 +1023,12 @@ void ChatApp::load_config() {
             if (cfg.contains("pruning_threshold") && cfg["pruning_threshold"].is_number_integer()) {
                 client.set_pruning_threshold(cfg["pruning_threshold"].get<size_t>());
             }
+            if (cfg.contains("embedding_model") && cfg["embedding_model"].is_string()) {
+                std::string em = cfg["embedding_model"].get<std::string>();
+                std::strcpy(embedding_model_buf, em.c_str());
+                semantic::set_model(em);
+            }
+
             if (cfg.contains("custom_system_prompt") && cfg["custom_system_prompt"].is_string()) {
                 std::string csp = cfg["custom_system_prompt"].get<std::string>();
                 std::strcpy(system_prompt_buf, csp.c_str());

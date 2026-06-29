@@ -23,6 +23,7 @@ private:
     char host_buf[128];
     int port;
     char model_buf[128];
+    char embedding_model_buf[128];
     
     // Chat UI state
     char input_buf[1024 * 16]; // Large buffer for multiline chat inputs

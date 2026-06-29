@@ -74,12 +74,8 @@ namespace tools {
                 }
 
                 json item;
-
                 fs::path absolute_entry = fs::absolute(entry.path());
-                item["n"] = absolute_entry.filename().generic_string();
                 item["p"] = absolute_entry.generic_string();
-                item["a"] = absolute_entry.generic_string();
-                item["p"] = fs::absolute(entry.path()).generic_string();
                 item["d"] = entry.is_directory();
                 if (!entry.is_directory()) item["s"] = entry.file_size();
 
@@ -113,10 +109,7 @@ namespace tools {
             }
 
             json result;
-
             result["files"] = files;
-            result["count"] = count;
-            result["hidden"] = hidden_count;
 
             if (truncated) result["truncated"] = true;
 
@@ -198,10 +191,9 @@ namespace tools {
                 if (!needle.empty() && lower_name.find(needle) == std::string::npos) continue;
 
                 json item;
-                item["n"] = name;
                 item["p"] = entry.path().generic_string();
                 item["d"] = entry.is_directory();
-                if (!entry.is_directory()) item["size"] = entry.file_size();
+                if (!entry.is_directory()) item["s"] = entry.file_size();
 
                 matches.push_back(item);
                 count++;

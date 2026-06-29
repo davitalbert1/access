@@ -98,3 +98,10 @@
 24	82	8043992655200000	E:/access/build/CMakeFiles/cmake.verify_globs	6f21da663055360b
 104	13384	8043992655200000	CMakeFiles/lmstudio_chat_client.dir/src/lm_client.cpp.obj	eb7afef0585630f1
 13385	16302	8043992800000000	lmstudio_chat_client.exe	584a381d8a9e4249
+4	48	8044013303800000	E:/access/build/CMakeFiles/cmake.verify_globs	6f21da663055360b
+82	3209	8044013320000000	CMakeFiles/lmstudio_chat_client.dir/src/main.cpp.obj	af8ce174d69688fe
+98	5229	8044013320000000	CMakeFiles/lmstudio_chat_client.dir/src/tools.cpp.obj	82ff3e665460ee69
+90	7319	8044013320000000	CMakeFiles/lmstudio_chat_client.dir/src/semantic_search.cpp.obj	48bb6d0606f74c92
+60	8282	8044013303800000	CMakeFiles/lmstudio_chat_client.dir/src/chat_app.cpp.obj	eb704d795df0ead1
+75	11240	8044013320000000	CMakeFiles/lmstudio_chat_client.dir/src/lm_client.cpp.obj	eb7afef0585630f1
+11241	13256	8044013420000000	lmstudio_chat_client.exe	584a381d8a9e4249
