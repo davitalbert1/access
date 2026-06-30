@@ -19,7 +19,7 @@ namespace tools {
     extern thread_local std::string current_tool_message_id;
 
     // Tool functions exposed to the AI model
-    std::string list_directory(const std::string& path_str, bool recursive = false, bool show_excluded = false);
+    std::string list_directory(const std::string& path_str, bool recursive = false, bool show_excluded = false, int max_depth = -1);
     std::string read_file(const std::string& filepath_str, size_t chunk_size, size_t offset);
     std::string search_files(const std::string& root_path_str, const std::string& pattern, bool recursive = true, int max_results = 100);
     std::string get_file_info(const std::string& filepath_str);

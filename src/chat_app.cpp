@@ -563,8 +563,8 @@ void ChatApp::render_right_panel() {
 
                         bool cmp = false;
 
-                            if (browser_sort_column == 0) {
-                                cmp = a.value("p", "").compare(b.value("p", "")) < 0;
+                        if (browser_sort_column == 0) {
+                            cmp = a.value("p", "").compare(b.value("p", "")) < 0;
                         } else if (browser_sort_column == 1) {
                             cmp = a.value("s", 0) < b.value("s", 0);
                         } else if (browser_sort_column == 2) {
@@ -586,7 +586,7 @@ void ChatApp::render_right_panel() {
                         ImGuiTableFlags_Resizable |
                         ImGuiTableFlags_ScrollY |
                         ImGuiTableFlags_RowBg)) {
-                        // HEADERS (sempre por frame)
+                        // HEADERS
                         ImGui::TableSetupColumn("Nome", ImGuiTableColumnFlags_WidthStretch);
                         ImGui::TableSetupColumn("Tamanho", ImGuiTableColumnFlags_WidthFixed, 90.0f);
                         ImGui::TableSetupColumn("Modificação", ImGuiTableColumnFlags_WidthFixed, 130.0f);
@@ -609,7 +609,6 @@ void ChatApp::render_right_panel() {
                             if (std::strlen(file_filter_buf) > 0) {
                                 std::string filter_str(file_filter_buf);
                                 std::string name_lower = name;
-
                                 std::transform(name_lower.begin(), name_lower.end(), name_lower.begin(), ::tolower);
                                 std::transform(filter_str.begin(), filter_str.end(), filter_str.begin(), ::tolower);
 
@@ -631,12 +630,12 @@ void ChatApp::render_right_panel() {
                             std::string label = name + "##" + full_path_str;
                             ImGui::Selectable(label.c_str(), false, ImGuiSelectableFlags_SpanAllColumns);
 
-                            // DUPLO CLIQUEa)
+                            // DUPLO CLIQUE
                             if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left) && is_dir) {
                                 std::strcpy(browser_path_buf, full_path_str.c_str());
                             }
 
-                            // CLIQUE DIREITO (popup)
+                            // CLIQUE DIREITO
                             if (ImGui::IsItemHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
                                 ImGui::OpenPopup(full_path_str.c_str());
                             }
@@ -652,12 +651,12 @@ void ChatApp::render_right_panel() {
 
                             if (is_dir) ImGui::PopStyleColor();
 
-                            // COLUNA 1 - tamanho
+                            // COLUNA 1
                             ImGui::TableSetColumnIndex(1);
                             if (!is_dir) ImGui::Text("%s", format_size(size).c_str());
                             else ImGui::TextDisabled("-");
 
-                            // COLUNA 2 - modificação
+                            // COLUNA 2
                             ImGui::TableSetColumnIndex(2);
                             ImGui::Text("%s", mtime.c_str());
                         }
@@ -671,7 +670,7 @@ void ChatApp::render_right_panel() {
             ImGui::EndTabItem();
         }
 
-        // Tab 2: Change History
+        // Tab 2
         if (ImGui::BeginTabItem("Historico de Alteracoes")) {
             auto history = tools::get_change_history();
             if (history.empty()) {
@@ -734,7 +733,7 @@ void ChatApp::render_right_panel() {
             ImGui::EndTabItem();
         }
 
-        // Tab 3: Tool Specs
+        // Tab 3
         if (ImGui::BeginTabItem("Especificacoes de Ferramentas")) {
             ImGui::BeginChild("ToolSpecsList", ImVec2(0, 0), true);
 
@@ -766,7 +765,7 @@ void ChatApp::render_right_panel() {
             ImGui::EndTabItem();
         }
 
-        // Tab 4: Advanced Settings & Stats
+        // Tab 4
         if (ImGui::BeginTabItem("Configuracoes")) {
             ImGui::BeginChild("SettingsArea", ImVec2(0, 0), true);
 

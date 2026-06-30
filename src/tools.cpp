@@ -46,7 +46,7 @@ namespace tools {
         return ss.str();
     }
 
-    std::string list_directory(const std::string& path_str, bool recursive, bool show_excluded) {
+    std::string list_directory(const std::string& path_str, bool recursive, bool show_excluded, int max_depth) {
         hidden_count = 0;
 
         try {
@@ -73,31 +73,17 @@ namespace tools {
                     return;
                 }
 
-                json item;
-                fs::path absolute_entry = fs::absolute(entry.path());
-                item["p"] = absolute_entry.generic_string();
-                item["d"] = entry.is_directory();
-                if (!entry.is_directory()) item["s"] = entry.file_size();
-
-                try {
-                    auto ftime = fs::last_write_time(entry.path());
-                    auto sctime = std::chrono::time_point_cast<std::chrono::system_clock::duration>(
-                        ftime - fs::file_time_type::clock::now() + std::chrono::system_clock::now()
-                    );
-                    std::time_t cftime = std::chrono::system_clock::to_time_t(sctime);
-                    char timebuf[32];
-                    std::strftime(timebuf, sizeof(timebuf), "%Y-%m-%d %H:%M", std::localtime(&cftime));
-                    item["m"] = timebuf;
-                } catch (...) {
-                    item["m"] = "";
-                }
-
-                files.push_back(item);
+                auto rel = fs::relative(entry.path(), p).generic_string();
+                if (entry.is_directory()) files.push_back(rel + "/");
+                else files.push_back(rel);
                 count++;
             };
 
             if (recursive) {
                 for (const auto& entry : fs::recursive_directory_iterator(p, fs::directory_options::skip_permission_denied)) {
+                    auto rel = fs::relative(entry.path(), p);
+                    int depth = std::distance(rel.begin(), rel.end()) - 1;
+                    if (max_depth >= 0 && depth > max_depth) continue;
                     add_entry(entry);
                     if (truncated) break;
                 }
@@ -111,7 +97,7 @@ namespace tools {
             json result;
             result["files"] = files;
 
-            if (truncated) result["truncated"] = true;
+            if (truncated) result["truncated"] = 1;
 
             return result.dump(-1, ' ', false);
         } catch (const std::exception& e) {
@@ -190,18 +176,13 @@ namespace tools {
 
                 if (!needle.empty() && lower_name.find(needle) == std::string::npos) continue;
 
-                json item;
-                item["p"] = entry.path().generic_string();
-                item["d"] = entry.is_directory();
-                if (!entry.is_directory()) item["s"] = entry.file_size();
-
-                matches.push_back(item);
+                if (entry.is_directory()) matches.push_back(entry.path().generic_string() + "/");
+                else matches.push_back(entry.path().generic_string());
                 count++;
             }
 
             json result;
             result["matches"] = matches;
-            result["count"] = count;
             return result.dump(-1, ' ', false);
         } catch (...) {
             return R"({"e":"ex"})";
@@ -218,13 +199,8 @@ namespace tools {
                 return result.dump(-1, ' ', false);
             }
 
-            result["exists"] = true;
-            result["n"] = p.filename().generic_string();
-            result["p"] = fs::absolute(p).generic_string();
-            result["parent"] = p.parent_path().generic_string();
-            result["is_directory"] = fs::is_directory(p);
-            result["is_file"] = fs::is_regular_file(p);
-            if (fs::is_regular_file(p)) result["size"] = fs::file_size(p);
+            if (fs::is_regular_file(p)) result["s"] = fs::file_size(p);
+            result["t"] = fs::is_directory(p) ? "d" : "f";
 
             return result.dump(-1, ' ', false);
         } catch (...) {
@@ -266,9 +242,7 @@ namespace tools {
 
             json out;
             out["c"] = content;
-            out["o"] = offset;
-            out["n"] = next_offset;
-            out["has_more"] = next_offset < file_size;
+            if(next_offset < file_size) out["n"] = next_offset;
 
             return out.dump();
         } catch (...) {

@@ -396,6 +396,7 @@ namespace lm {
                                 {"type", "object"},
                                 {"properties", {
                                     {"path", {{"type", "string"}}},
+                                    {"max_depth", {{"type", "int"}}},
                                     {"recursive", {{"type", "boolean"}}}
                                 }},
                                 {"required", json::array({"path"})}
@@ -471,7 +472,7 @@ namespace lm {
 
                 req["tools"] = cached_tools;
                 req["tool_choice"] = "auto";
-                req["parallel_tool_calls"] = false;
+                req["parallel_tool_calls"] = true;
 
                 std::string url = "http://" + host + ":" + std::to_string(port) + "/v1/chat/completions";
 

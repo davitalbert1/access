@@ -1,0 +1,17 @@
+semantic_seaarch:
+
+| Otimização                                                          |                                      Economia estimada |
+| ------------------------------------------------------------------- | -----------------------------------------------------: |
+| Não enviar comentários (`//`, `/* */`) (feito)                      |                                              **5–15%** |
+| Remover linhas em branco consecutivas                               |                                               **1–3%** |
+| Remover indentação desnecessária (tabs → 1 espaço ou minificar)     |                                               **3–8%** |
+| Remover includes não utilizados                                     | **0%** (não afeta contexto enviado, apenas compilação) |
+| Remover nomes longos de variáveis (somente se enviar código ao LLM) |                                               **2–8%** |
+| Remover namespaces repetidos                                        |                                               **1–3%** |
+| Remover chaves opcionais em blocos de 1 linha                       |                                               **1–2%** |
+| Remover espaços em volta de operadores                              |                                               **2–4%** |
+| Compactar strings literais repetidas                                |                                               **1–5%** |
+| Enviar somente funções relevantes                                   |                                             **50–95%** |
+| Enviar somente assinatura + implementação necessária                |                                             **60–98%** |
+| Substituir arquivos inteiros por resumo                             |                                             **80–99%** |
+| Enviar AST ou símbolos em vez do código                             |                                             **90–99%** |
