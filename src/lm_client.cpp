@@ -17,6 +17,43 @@
 
 static std::mutex log_file_mutex;
 thread_local std::string reasoning_accum;
+using json = nlohmann::json;
+
+std::string get_string(const json& j, const char* key, const std::string& def = "") {
+    auto it = j.find(key);
+    if (it == j.end() || it->is_null()) return def;
+    if (it->is_string()) return it->get<std::string>();
+    return it->dump();
+}
+
+int get_int(const json& j, const char* key, int def) {
+    auto it = j.find(key);
+    if (it == j.end() || it->is_null()) return def;
+    if (it->is_number_integer()) return it->get<int>();
+    if (it->is_number()) return static_cast<int>(it->get<double>());
+
+    if (it->is_string()) {
+        try {
+            return std::stoi(it->get<std::string>());
+        } catch (...) {}
+    }
+
+    return def;
+}
+
+bool get_bool(const json& j, const char* key, bool def) {
+    auto it = j.find(key);
+    if (it == j.end() || it->is_null()) return def;
+    if (it->is_boolean()) return it->get<bool>();
+
+    if (it->is_string()) {
+        std::string s = it->get<std::string>();
+        if (s == "true" || s == "1") return true;
+        if (s == "false" || s == "0") return false;
+    }
+
+    return def;
+}
 
 static void log_tool_call(const std::string& func_name, const std::string& args_str, const std::string& result) {
     std::lock_guard<std::mutex> lock(log_file_mutex);
@@ -33,8 +70,6 @@ static void log_tool_call(const std::string& func_name, const std::string& args_
 }
 
 static std::atomic<int> global_msg_id_counter{1};
-
-using json = nlohmann::json;
 
 namespace lm {
     static bool contains(std::string_view text, std::string_view word) {
@@ -101,8 +136,7 @@ namespace lm {
                     ss << "d " << path << "\n";
                 } else {
                     ss << "f " << path << " (" << file.value("s", 0) << " bytes)";
-                    if (file.contains("m") && !file.value("m", "").empty())
-                        ss << " " << file.value("m", "");
+                    if (file.contains("m") && !file.value("m", "").empty()) ss << " " << file.value("m", "");
                     ss << "\n";
                 }
             }
@@ -174,17 +208,18 @@ namespace lm {
         
         // Set a default system prompt
         custom_system_prompt =
-        "You are a code analysis agent.\n"
-        "Reply in Portuguese.\n"
-        "\n"
-        "STRICT RULES:\n"
-        "- Never output XML.\n"
-        "- Never output <tool_call>.\n"
-        "- Never output markdown describing tools.\n"
-        "- Tool calls MUST be returned ONLY using the OpenAI tool_calls field.\n"
-        "- If a tool is needed, leave content empty and populate tool_calls.\n"
-        "- If no tool is needed, answer normally.\n"
-        "- Any XML output is invalid.\n";
+            "You are a code analysis agent.\n"
+            "Reply in Portuguese.\n"
+            "\n"
+            "STRICT RULES:\n"
+            "- Never output XML.\n"
+            "- Never output <tool_call>.\n"
+            "- Never output markdown describing tools.\n"
+            "- Tool calls MUST be returned ONLY using the OpenAI tool_calls field.\n"
+            "- If a tool is needed, leave content empty and populate tool_calls.\n"
+            "- If no tool is needed, answer normally.\n"
+            "- Be economic when possible.\n"
+            "- Any XML output is invalid.\n";
 
         set_system_prompt(custom_system_prompt);
     }
@@ -675,7 +710,7 @@ namespace lm {
                 json args = json::parse(args_str);
                 if (func_name == "list_directory") {
                     std::string path = args["path"].get<std::string>();
-                    bool recursive = args.value("recursive", true);
+                    bool recursive = get_bool(args, "recursive", true);
                     result = tools::list_directory(path, recursive);
                 } else if (func_name == "read_file") {
                     std::string path = args["path"].get<std::string>();
@@ -684,9 +719,9 @@ namespace lm {
                     result = tools::read_file(path, chunk_size, offset);
                 } else if (func_name == "search_files") {
                     std::string path = args["path"].get<std::string>();
-                    std::string pattern = args.value("pattern", "");
-                    bool recursive = args.value("recursive", true);
-                    int max_results = args.value("max_results", 100);
+                    std::string pattern = get_string(args, "pattern");
+                    bool recursive = get_bool(args, "recursive", true);
+                    int max_results = get_int(args, "max_results", 100);
                     result = tools::search_files(path, pattern, recursive, max_results);
                 } else if (func_name == "get_file_info") {
                     std::string path = args["path"].get<std::string>();

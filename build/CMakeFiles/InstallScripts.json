@@ -1,7 +1,7 @@
 {
 	"InstallScripts" : 
 	[
-		"E:/access/build/cmake_install.cmake"
+		"D:/access/build/cmake_install.cmake"
 	],
 	"Parallel" : false
 }

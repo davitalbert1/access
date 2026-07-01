@@ -113,77 +113,44 @@ namespace tools {
             if (!fs::is_directory(root)) return R"({"e":"not_dir"})";
 
             std::string needle = pattern;
-            std::transform(needle.begin(), needle.end(), needle.begin(), [](unsigned char c) {
-                return static_cast<char>(std::tolower(c));
-            });
+            std::transform(needle.begin(), needle.end(), needle.begin(), [](unsigned char c) { return std::tolower(c); });
 
-            if (needle.empty()) return R"({"error":"pattern_required","matches":[],"count":0})";
+            if (needle.empty()) return R"({"e":"no_pattern"})";
 
-            std::vector<fs::directory_entry> all_entries;
+            json out = json::array();
 
-            if (recursive) {
-                for (const auto& entry : fs::recursive_directory_iterator(root, fs::directory_options::skip_permission_denied)) {
-                    all_entries.push_back(entry);
-                }
-            } else {
-                for (const auto& entry : fs::directory_iterator(root, fs::directory_options::skip_permission_denied)) {
-                    all_entries.push_back(entry);
-                }
-            }
+            int remaining = std::max(1, max_results);
 
-            std::sort(all_entries.begin(), all_entries.end(), [&](const fs::directory_entry& a, const fs::directory_entry& b) {
-                std::string name_a = a.path().filename().generic_string();
-                std::string name_b = b.path().filename().generic_string();
-                std::string lower_a = name_a, lower_b = name_b;
-                std::transform(lower_a.begin(), lower_a.end(), lower_a.begin(), [](unsigned char c) {
-                    return static_cast<char>(std::tolower(c));
-                });
-                std::transform(lower_b.begin(), lower_b.end(), lower_b.begin(), [](unsigned char c) {
-                    return static_cast<char>(std::tolower(c));
-                });
-
-                bool a_starts = !needle.empty() && lower_a.rfind(needle, 0) == 0;
-                bool b_starts = !needle.empty() && lower_b.rfind(needle, 0) == 0;
-                if (a_starts != b_starts) return a_starts > b_starts;
-
-                bool a_contains = !needle.empty() && lower_a.find(needle) != std::string::npos;
-                bool b_contains = !needle.empty() && lower_b.find(needle) != std::string::npos;
-                if (a_contains != b_contains) return a_contains > b_contains;
-
-                bool a_dir = a.is_directory();
-                bool b_dir = b.is_directory();
-                if (a_dir != b_dir) return a_dir > b_dir;
-
-                int depth_a = std::distance(a.path().begin(), a.path().end());
-                int depth_b = std::distance(b.path().begin(), b.path().end());
-                if (depth_a != depth_b) return depth_a < depth_b;
-
-                return lower_a < lower_b;
-            });
-
-            json matches = json::array();
-            int count = 0;
-            const int MAX_RESULTS = std::max(1, max_results);
-
-            for (const auto& entry : all_entries) {
-                if (count >= MAX_RESULTS) break;
+            auto process = [&](const fs::directory_entry& entry) {
+                if (remaining == 0) return false;
 
                 std::string name = entry.path().filename().generic_string();
-                std::string lower_name = name;
-                std::transform(lower_name.begin(), lower_name.end(), lower_name.begin(), [](unsigned char c) {
-                    return static_cast<char>(std::tolower(c));
-                });
+                std::string lower = name;
+                std::transform(lower.begin(), lower.end(), lower.begin(), [](unsigned char c) { return std::tolower(c); });
 
-                if (!needle.empty() && lower_name.find(needle) == std::string::npos) continue;
+                if (lower.find(needle) == std::string::npos) return true;
 
-                if (entry.is_directory()) matches.push_back(entry.path().generic_string() + "/");
-                else matches.push_back(entry.path().generic_string());
-                count++;
+                std::string rel = fs::relative(entry.path(), root).generic_string();
+
+                if (entry.is_directory()) rel += "/";
+
+                out.push_back(rel);
+
+                --remaining;
+                return remaining != 0;
+            };
+
+            if (recursive) {
+                for (const auto& e : fs::recursive_directory_iterator(root, fs::directory_options::skip_permission_denied)) {
+                    if (!process(e)) break;
+                }
+            } else {
+                for (const auto& e : fs::directory_iterator(root, fs::directory_options::skip_permission_denied)) {
+                    if (!process(e)) break;
+                }
             }
 
-            json result;
-            result["matches"] = matches;
-            return result.dump(-1, ' ', false);
+            return out.dump(-1, ' ', false);
         } catch (...) {
             return R"({"e":"ex"})";
         }

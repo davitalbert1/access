@@ -48,8 +48,5 @@ target_link_libraries(lmstudio_chat_client PRIVATE
 )
 
 if(WIN32)
-    target_link_libraries(lmstudio_chat_client PRIVATE
-        gdi32
-        opengl32
-    )
+    target_link_libraries(lmstudio_chat_client PRIVATE gdi32 opengl32)
 endif()
